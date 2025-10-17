@@ -12,18 +12,31 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"math/rand"
+	"net"
 	"net/http"
+	"regexp"
 	"sync"
+	"syscall"
 	"time"
 )
 
-const defaultEndpoint = "https://main.aikocorp.ai/api/monitor/ingest"
-const sdkLanguage = "go"
+const (
+	defaultEndpoint           = "https://main.aikocorp.ai/api/monitor/ingest"
+	stagingEndpoint           = "https://staging.aikocorp.ai/api/monitor/ingest"
+	sdkLanguage               = "go"
+	defaultMaxConcurrentSends = 5
+)
 
 // sdkVersion can be overridden via ldflags at build time.
 var sdkVersion = "dev"
+
+var (
+	projectKeyPattern    = regexp.MustCompile(`^pk_[A-Za-z0-9_-]{22}$`)
+	localEndpointPattern = regexp.MustCompile(`^http://(?:localhost|127\.0\.0\.1|\[::1\]):\d+/api/monitor/ingest$`)
+)
 
 func init() {
 	rand.Seed(time.Now().UnixNano())
@@ -43,6 +56,7 @@ type Monitor struct {
 	secret  []byte
 	client  *http.Client
 	events  chan Event
+	sem     chan struct{}
 	wg      sync.WaitGroup
 	once    sync.Once
 	closeCh chan struct{}
@@ -61,6 +75,10 @@ func Init(cfg Config) (*Monitor, error) {
 	endpoint := cfg.Endpoint
 	if endpoint == "" {
 		endpoint = defaultEndpoint
+	}
+
+	if err := validateConfig(cfg.ProjectKey, cfg.SecretKey, endpoint); err != nil {
+		return nil, err
 	}
 
 	secret, err := base64.RawURLEncoding.DecodeString(cfg.SecretKey)
@@ -83,6 +101,7 @@ func Init(cfg Config) (*Monitor, error) {
 		secret:  secret,
 		client:  &http.Client{Timeout: 10 * time.Second},
 		events:  make(chan Event, 1024),
+		sem:     make(chan struct{}, defaultMaxConcurrentSends),
 		closeCh: make(chan struct{}),
 		enabled: enabled,
 	}
@@ -95,6 +114,19 @@ func Init(cfg Config) (*Monitor, error) {
 	return m, nil
 }
 
+func validateConfig(projectKey, secretKey, endpoint string) error {
+	if !projectKeyPattern.MatchString(projectKey) {
+		return errors.New("projectKey must start with 'pk_' followed by 22 base64url characters")
+	}
+	if len(secretKey) != 43 {
+		return errors.New("secretKey must be exactly 43 base64 characters")
+	}
+	if endpoint != defaultEndpoint && endpoint != stagingEndpoint && !localEndpointPattern.MatchString(endpoint) {
+		return errors.New("endpoint must match http://localhost:PORT/api/monitor/ingest or be 'https://main.aikocorp.ai/api/monitor/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'")
+	}
+	return nil
+}
+
 // AddEvent enqueues an event for delivery. Safe for concurrent use.
 func (m *Monitor) AddEvent(evt Event) {
 	if m == nil || !m.enabled {
@@ -103,6 +135,8 @@ func (m *Monitor) AddEvent(evt Event) {
 	select {
 	case m.events <- evt:
 	case <-m.closeCh:
+	default:
+		log.Println("[Aiko] Event queue is full. Dropping event.")
 	}
 }
 
@@ -136,7 +170,13 @@ func (m *Monitor) Shutdown(ctx context.Context) error {
 func (m *Monitor) run() {
 	defer m.wg.Done()
 	for evt := range m.events {
-		m.send(evt)
+		m.sem <- struct{}{}
+		m.wg.Add(1)
+		go func(e Event) {
+			defer m.wg.Done()
+			defer func() { <-m.sem }()
+			m.send(e)
+		}(evt)
 	}
 }
 
@@ -199,11 +239,45 @@ func isRetryableStatus(status int) bool {
 }
 
 func isRetryableError(err error) bool {
-	var netErr interface{ Temporary() bool }
-	if errors.As(err, &netErr) {
-		return netErr.Temporary()
+	if err == nil {
+		return false
 	}
-	return true
+
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.Temporary() || dnsErr.IsTimeout
+	}
+
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		if opErr.Timeout() {
+			return true
+		}
+		switch {
+		case errors.Is(opErr.Err, syscall.ECONNREFUSED),
+			errors.Is(opErr.Err, syscall.ECONNRESET),
+			errors.Is(opErr.Err, syscall.ECONNABORTED),
+			errors.Is(opErr.Err, syscall.EHOSTUNREACH),
+			errors.Is(opErr.Err, syscall.ENETUNREACH):
+			return true
+		}
+
+		var nestedDNS *net.DNSError
+		if errors.As(opErr.Err, &nestedDNS) {
+			return nestedDNS.Temporary() || nestedDNS.IsTimeout
+		}
+	}
+
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout() || netErr.Temporary()
+	}
+
+	return false
 }
 
 func applyJitter(base time.Duration) time.Duration {
