@@ -17,7 +17,9 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"regexp"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -28,6 +30,7 @@ const (
 	stagingEndpoint           = "https://staging.aikocorp.ai/api/monitor/ingest"
 	sdkLanguage               = "go"
 	defaultMaxConcurrentSends = 5
+	defaultQueueSize          = 5000
 )
 
 // sdkVersion can be overridden via ldflags at build time.
@@ -100,7 +103,7 @@ func Init(cfg Config) (*Monitor, error) {
 		},
 		secret:  secret,
 		client:  &http.Client{Timeout: 10 * time.Second},
-		events:  make(chan Event, 1024),
+		events:  make(chan Event, defaultQueueSize),
 		sem:     make(chan struct{}, defaultMaxConcurrentSends),
 		closeCh: make(chan struct{}),
 		enabled: enabled,
@@ -119,7 +122,7 @@ func validateConfig(projectKey, secretKey, endpoint string) error {
 		return errors.New("projectKey must start with 'pk_' followed by 22 base64url characters")
 	}
 	if len(secretKey) != 43 {
-		return errors.New("secretKey must be exactly 43 base64 characters")
+		return errors.New("secretKey must be exactly 43 base64url characters")
 	}
 	if endpoint != defaultEndpoint && endpoint != stagingEndpoint && !localEndpointPattern.MatchString(endpoint) {
 		return errors.New("endpoint must match http://localhost:PORT/api/monitor/ingest or be 'https://main.aikocorp.ai/api/monitor/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'")
@@ -210,6 +213,7 @@ func (m *Monitor) send(evt Event) {
 		req.Header.Set("X-Signature", signature)
 
 		resp, err := m.client.Do(req)
+		fmt.Println(resp.StatusCode)
 		cancel()
 		if err == nil {
 			io.Copy(io.Discard, resp.Body)
@@ -302,6 +306,70 @@ func sign(secret, body []byte) string {
 	mac := hmac.New(sha256.New, secret)
 	mac.Write(body)
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// Enabled reports whether the monitor is actively capturing events.
+func (m *Monitor) Enabled() bool {
+	if m == nil {
+		return false
+	}
+	return m.enabled
+}
+
+// SDKVersion returns the current SDK version label (overridable via ldflags).
+func SDKVersion() string {
+	return sdkVersion
+}
+
+// VersionHeaderValue returns the canonical SDK version header payload.
+func VersionHeaderValue() string {
+	return fmt.Sprintf("%s:%s", sdkLanguage, sdkVersion)
+}
+
+// EndpointFromURL derives an endpoint path from a URL or request URI string.
+// For absolute URLs it preserves the query string; for request URIs it strips it.
+func EndpointFromURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	if strings.Contains(raw, "://") {
+		if u, err := url.Parse(raw); err == nil {
+			return joinPathAndQuery(u.Path, u.RawQuery)
+		}
+		return trimQuery(raw)
+	}
+	if raw[0] == '/' {
+		return trimQuery(raw)
+	}
+	if u, err := url.Parse(raw); err == nil {
+		if u.Scheme != "" || u.Host != "" {
+			return joinPathAndQuery(u.Path, u.RawQuery)
+		}
+		if u.Path != "" {
+			return trimQuery(u.Path)
+		}
+	}
+	return trimQuery(raw)
+}
+
+func joinPathAndQuery(path, query string) string {
+	if path == "" {
+		if query == "" {
+			return ""
+		}
+		return "?" + query
+	}
+	if query == "" {
+		return path
+	}
+	return path + "?" + query
+}
+
+func trimQuery(raw string) string {
+	if idx := strings.IndexByte(raw, '?'); idx >= 0 {
+		return raw[:idx]
+	}
+	return raw
 }
 
 // Event represents a single HTTP request/response lifecycle observation.

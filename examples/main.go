@@ -10,14 +10,12 @@ import (
 	"time"
 
 	aiko "github.com/aikocorp/aiko-monitor-go"
+	"github.com/aikocorp/aiko-monitor-go/integrations"
 )
 
 func main() {
-	projectKey := os.Getenv("AIKO_PROJECT_KEY")
-	secretKey := os.Getenv("AIKO_SECRET_KEY")
-	if projectKey == "" || secretKey == "" {
-		log.Fatal("AIKO_PROJECT_KEY and AIKO_SECRET_KEY must be set in the environment")
-	}
+	projectKey := "pk_xNIiFZwJ8tu1GLNsCs4P4w"
+	secretKey := "p_E1ygBt4NQgBpN4pCkuklWIYCpxPNJ5ALU4ooULfdw"
 
 	monitor, err := aiko.Init(aiko.Config{
 		ProjectKey: projectKey,
@@ -37,7 +35,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:    ":8080",
-		Handler: monitor.Middleware(mux),
+		Handler: integrations.NetHTTP(monitor)(mux),
 	}
 
 	go func() {

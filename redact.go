@@ -34,7 +34,7 @@ var sensitiveKeys = map[string]struct{}{
 var piiPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`[\w\.-]+@[\w\.-]+\.[A-Za-z]{2,}`),
 	regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`),
-	regexp.MustCompile(`\b(?:[A-F0-9]{1,4}:){2,7}[A-F0-9]{1,4}\b`),
+	regexp.MustCompile(`(?i)\b(?:[A-F0-9]{1,4}:){2,7}[A-F0-9]{1,4}\b`),
 }
 
 func redactHeaders(in map[string]string) map[string]string {

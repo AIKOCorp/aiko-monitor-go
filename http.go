@@ -9,9 +9,11 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"unicode/utf8"
 )
 
-func normalizeHeaders(h http.Header) map[string]string {
+// CanonicalHeaders flattens HTTP headers into a lowercase map with comma-joined values.
+func CanonicalHeaders(h http.Header) map[string]string {
 	if h == nil {
 		return map[string]string{}
 	}
@@ -26,7 +28,8 @@ func normalizeHeaders(h http.Header) map[string]string {
 	return out
 }
 
-func parseJSONBody(raw []byte) interface{} {
+// ParseJSONBody attempts to decode JSON payloads, defaulting to an empty object or raw string.
+func ParseJSONBody(raw []byte) interface{} {
 	if len(raw) == 0 {
 		return map[string]interface{}{}
 	}
@@ -37,13 +40,52 @@ func parseJSONBody(raw []byte) interface{} {
 	return string(raw)
 }
 
-func decodeResponseBody(raw []byte, headers map[string]string) interface{} {
+// DecodeResponseBody interprets response payloads according to content type and encoding.
+func DecodeResponseBody(raw []byte, headers map[string]string) interface{} {
 	if len(raw) == 0 {
 		return map[string]interface{}{}
 	}
 
+	decoded := decodeWithEncoding(raw, strings.ToLower(headers["content-encoding"]))
+	ctype := strings.ToLower(headers["content-type"])
+
+	if strings.Contains(ctype, "application/json") {
+		if parsed, ok := tryParseJSON(decoded); ok {
+			return parsed
+		}
+		return string(decoded)
+	}
+
+	if strings.HasPrefix(ctype, "text/") || strings.Contains(ctype, "xml") || strings.Contains(ctype, "html") {
+		return string(decoded)
+	}
+
+	if ctype != "" {
+		if parsed, ok := tryParseJSON(decoded); ok {
+			return parsed
+		}
+		return map[string]string{"base64": base64.StdEncoding.EncodeToString(decoded)}
+	}
+
+	if parsed, ok := tryParseJSON(decoded); ok {
+		return parsed
+	}
+	if utf8.Valid(decoded) {
+		return string(decoded)
+	}
+	return map[string]string{"base64": base64.StdEncoding.EncodeToString(decoded)}
+}
+
+func tryParseJSON(raw []byte) (interface{}, bool) {
+	var out interface{}
+	if err := json.Unmarshal(raw, &out); err == nil {
+		return out, true
+	}
+	return nil, false
+}
+
+func decodeWithEncoding(raw []byte, encoding string) []byte {
 	decoded := raw
-	encoding := strings.ToLower(headers["content-encoding"])
 	switch {
 	case strings.Contains(encoding, "gzip"):
 		if gr, err := gzip.NewReader(bytes.NewReader(raw)); err == nil {
@@ -60,14 +102,5 @@ func decodeResponseBody(raw []byte, headers map[string]string) interface{} {
 			fr.Close()
 		}
 	}
-
-	ctype := strings.ToLower(headers["content-type"])
-	switch {
-	case strings.Contains(ctype, "application/json"):
-		return parseJSONBody(decoded)
-	case strings.HasPrefix(ctype, "text/") || strings.Contains(ctype, "xml") || strings.Contains(ctype, "html"):
-		return string(decoded)
-	default:
-		return map[string]string{"base64": base64.StdEncoding.EncodeToString(decoded)}
-	}
+	return decoded
 }
