@@ -8,7 +8,6 @@ import (
 	"time"
 
 	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
-	aikofasthttp "github.com/aikocorp/aiko-monitor-go/fasthttp"
 	"github.com/valyala/fasthttp"
 )
 
@@ -203,7 +202,7 @@ func main() {
 		}
 	}
 
-	monitored := aikofasthttp.Middleware(monitor, handler)
+	monitored := aiko.FastHTTPMiddleware(monitor, handler)
 	log.Println("Listening on :8081")
 	log.Fatal(fasthttp.ListenAndServe(":8081", monitored))
 }

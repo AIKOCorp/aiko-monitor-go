@@ -1,4 +1,4 @@
-package aiko
+package aiko_test
 
 import (
 	"bytes"
@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
 )
 
 func TestCanonicalHeadersFlattensAndLowercases(t *testing.T) {
@@ -16,7 +18,7 @@ func TestCanonicalHeadersFlattensAndLowercases(t *testing.T) {
 	headers.Add("Set-Cookie", "a=1")
 	headers.Add("Set-Cookie", "b=2")
 
-	canon := CanonicalHeaders(headers)
+	canon := aiko.CanonicalHeaders(headers)
 	if canon["content-type"] != "application/json" {
 		t.Fatalf("expected lowercased content-type, got %q", canon["content-type"])
 	}
@@ -27,36 +29,28 @@ func TestCanonicalHeadersFlattensAndLowercases(t *testing.T) {
 
 func TestRedactStringMasksIPAddresses(t *testing.T) {
 	input := "contact user@example.com at 2001:0DB8:85A3:0000:0000:8A2E:0370:7334 or 203.0.113.10"
-	output := redactString(input)
+	output := aiko.RedactString(input)
 	if output == input {
 		t.Fatal("expected redaction to modify string")
 	}
-	if !containsRedaction(output) {
+	if !strings.Contains(output, "[REDACTED]") {
 		t.Fatalf("expected redaction mask in output: %q", output)
 	}
-	if containsLiteralIP(output) {
+	lower := strings.ToLower(output)
+	if strings.Contains(lower, "2001:0db8") || strings.Contains(lower, "203.0.113.10") {
 		t.Fatalf("expected IP addresses to be masked: %q", output)
 	}
 }
 
-func containsRedaction(s string) bool {
-	return strings.Contains(s, redactionMask)
-}
-
-func containsLiteralIP(s string) bool {
-	lower := strings.ToLower(s)
-	return strings.Contains(lower, "2001:0db8") || strings.Contains(lower, "203.0.113.10")
-}
-
 func TestRedactArrayElements(t *testing.T) {
 	value := []any{"user@example.com", "no pii"}
-	redacted := redactValue(value)
+	redacted := aiko.RedactValue(value)
 
 	arr, ok := redacted.([]any)
 	if !ok {
 		t.Fatalf("expected []any, got %T", redacted)
 	}
-	if arr[0] != redactionMask {
+	if arr[0] != "[REDACTED]" {
 		t.Fatalf("expected first element redacted, got %v", arr[0])
 	}
 	if arr[1] != "no pii" {
@@ -67,7 +61,7 @@ func TestRedactArrayElements(t *testing.T) {
 func TestDecodeResponseBodyRespectsContentTypes(t *testing.T) {
 	jsonBody := []byte(`{"x":1}`)
 	jsonHeaders := map[string]string{"content-type": "application/json"}
-	parsed := DecodeResponseBody(jsonBody, jsonHeaders)
+	parsed := aiko.DecodeResponseBody(jsonBody, jsonHeaders)
 	obj, ok := parsed.(map[string]any)
 	if !ok || obj["x"].(float64) != 1 {
 		t.Fatalf("expected JSON object, got %#v", parsed)
@@ -75,33 +69,33 @@ func TestDecodeResponseBodyRespectsContentTypes(t *testing.T) {
 
 	textBody := []byte("<html></html>")
 	textHeaders := map[string]string{"content-type": "text/html"}
-	parsed = DecodeResponseBody(textBody, textHeaders)
+	parsed = aiko.DecodeResponseBody(textBody, textHeaders)
 	if str, ok := parsed.(string); !ok || str != "<html></html>" {
 		t.Fatalf("expected string body, got %#v", parsed)
 	}
 
 	binaryBody := []byte{0, 1, 2}
 	binaryHeaders := map[string]string{"content-type": "application/octet-stream"}
-	parsed = DecodeResponseBody(binaryBody, binaryHeaders)
-	if objMap, ok := parsed.(map[string]string); ok {
-		if objMap["base64"] != base64.StdEncoding.EncodeToString(binaryBody) {
-			t.Fatalf("expected base64 encoding, got %v", objMap["base64"])
-		}
-	} else {
+	parsed = aiko.DecodeResponseBody(binaryBody, binaryHeaders)
+	objMap, ok := parsed.(map[string]string)
+	if !ok {
 		t.Fatalf("expected base64 map, got %#v", parsed)
+	}
+	if objMap["base64"] != base64.StdEncoding.EncodeToString(binaryBody) {
+		t.Fatalf("expected base64 encoding, got %v", objMap["base64"])
 	}
 }
 
 func TestDecodeResponseBodyBestEffortWithoutHeaders(t *testing.T) {
 	jsonBody := []byte(`{"message":"ok"}`)
-	parsed := DecodeResponseBody(jsonBody, map[string]string{})
+	parsed := aiko.DecodeResponseBody(jsonBody, map[string]string{})
 	obj, ok := parsed.(map[string]any)
 	if !ok || obj["message"].(string) != "ok" {
 		t.Fatalf("expected JSON object fallback, got %#v", parsed)
 	}
 
 	textBody := []byte("plain text")
-	parsed = DecodeResponseBody(textBody, map[string]string{})
+	parsed = aiko.DecodeResponseBody(textBody, map[string]string{})
 	if str, ok := parsed.(string); !ok || str != "plain text" {
 		t.Fatalf("expected string fallback, got %#v", parsed)
 	}
@@ -110,7 +104,7 @@ func TestDecodeResponseBodyBestEffortWithoutHeaders(t *testing.T) {
 func TestDecodeResponseBodyHandlesInvalidJSON(t *testing.T) {
 	body := []byte("not-json")
 	headers := map[string]string{"content-type": "application/json"}
-	parsed := DecodeResponseBody(body, headers)
+	parsed := aiko.DecodeResponseBody(body, headers)
 	if str, ok := parsed.(string); !ok || str != "not-json" {
 		t.Fatalf("expected invalid JSON to return raw string, got %#v", parsed)
 	}
@@ -127,7 +121,7 @@ func TestEndpointFromURLDerivesPathCorrectly(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		if got := EndpointFromURL(tc.input); got != tc.expected {
+		if got := aiko.EndpointFromURL(tc.input); got != tc.expected {
 			t.Fatalf("expected %q from %q, got %q", tc.expected, tc.input, got)
 		}
 	}
@@ -156,7 +150,7 @@ func TestSignMatchesKnownVectors(t *testing.T) {
 		if err != nil {
 			t.Fatalf("decode secret: %v", err)
 		}
-		sig := sign(key, []byte(tc.payload))
+		sig := aiko.Sign(key, []byte(tc.payload))
 		if sig != tc.expected {
 			t.Fatalf("expected signature %q, got %q", tc.expected, sig)
 		}
@@ -164,7 +158,7 @@ func TestSignMatchesKnownVectors(t *testing.T) {
 }
 
 func TestGzipEventRoundTrip(t *testing.T) {
-	evt := Event{
+	evt := aiko.Event{
 		URL:             "http://example.com/api",
 		Endpoint:        "/api?q=a",
 		Method:          "GET",
@@ -176,7 +170,7 @@ func TestGzipEventRoundTrip(t *testing.T) {
 		DurationMS:      10,
 	}
 
-	compressed, err := gzipEvent(evt)
+	compressed, err := aiko.GzipEvent(evt)
 	if err != nil {
 		t.Fatalf("gzip event: %v", err)
 	}
@@ -187,7 +181,7 @@ func TestGzipEventRoundTrip(t *testing.T) {
 	}
 	defer zr.Close()
 
-	var decoded Event
+	var decoded aiko.Event
 	if err := json.NewDecoder(zr).Decode(&decoded); err != nil {
 		t.Fatalf("decode gzipped event: %v", err)
 	}

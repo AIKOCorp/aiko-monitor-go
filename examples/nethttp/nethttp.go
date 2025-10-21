@@ -9,7 +9,6 @@ import (
 	"time"
 
 	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
-	"github.com/aikocorp/aiko-monitor-go/nethttp"
 )
 
 func main() {
@@ -41,7 +40,7 @@ func main() {
 	mux.HandleFunc("/profile", getProfile)
 	mux.HandleFunc("/error", errorRoute)
 
-	wrapped := nethttp.Middleware(monitor)(mux)
+	wrapped := aiko.NetHTTPMiddleware(monitor)(mux)
 
 	log.Println("Listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", wrapped))

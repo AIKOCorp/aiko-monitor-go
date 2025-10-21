@@ -33,7 +33,19 @@ type Config struct {
 	Logger             *log.Logger
 }
 
-func validateConfig(projectKey, secretKey, endpoint string) error {
+type Event struct {
+	URL             string            `json:"url"`
+	Endpoint        string            `json:"endpoint"`
+	Method          string            `json:"method"`
+	StatusCode      int               `json:"status_code"`
+	RequestHeaders  map[string]string `json:"request_headers"`
+	RequestBody     any               `json:"request_body"`
+	ResponseHeaders map[string]string `json:"response_headers"`
+	ResponseBody    any               `json:"response_body"`
+	DurationMS      int64             `json:"duration_ms"`
+}
+
+func ValidateConfig(projectKey, secretKey, endpoint string) error {
 	if !projectKeyPattern.MatchString(projectKey) {
 		return errors.New("projectKey must start with 'pk_' followed by 22 base64url characters")
 	}
@@ -44,4 +56,18 @@ func validateConfig(projectKey, secretKey, endpoint string) error {
 		return errors.New("endpoint must match http://localhost:PORT/api/monitor/ingest or be 'https://main.aikocorp.ai/api/monitor/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'")
 	}
 	return nil
+}
+
+func RedactEvent(evt Event) Event {
+	return Event{
+		URL:             evt.URL,
+		Endpoint:        evt.Endpoint,
+		Method:          evt.Method,
+		StatusCode:      evt.StatusCode,
+		RequestHeaders:  redactHeaders(evt.RequestHeaders),
+		RequestBody:     RedactValue(evt.RequestBody),
+		ResponseHeaders: redactHeaders(evt.ResponseHeaders),
+		ResponseBody:    RedactValue(evt.ResponseBody),
+		DurationMS:      evt.DurationMS,
+	}
 }

@@ -1,4 +1,4 @@
-package nethttp_test
+package aiko_test
 
 import (
 	"context"
@@ -9,16 +9,15 @@ import (
 	"time"
 
 	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
-	"github.com/aikocorp/aiko-monitor-go/internal/testserver"
-	"github.com/aikocorp/aiko-monitor-go/nethttp"
+	testserver "github.com/aikocorp/aiko-monitor-go/test/mockserver"
 )
 
 const (
-	projectKey = "pk_92Yb_kCIwRhy06UF-FQShg"
-	secretKey  = "aNlvpEIXkeEubNgikWXyGnh8LyXa72yZhR9lEmzgHCM"
+	middlewareProjectKey = "pk_92Yb_kCIwRhy06UF-FQShg"
+	middlewareSecretKey  = "aNlvpEIXkeEubNgikWXyGnh8LyXa72yZhR9lEmzgHCM"
 )
 
-func shutdown(t *testing.T, monitor *aiko.Monitor) {
+func shutdownMonitorHelper(t *testing.T, monitor *aiko.Monitor) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -28,23 +27,23 @@ func shutdown(t *testing.T, monitor *aiko.Monitor) {
 }
 
 func TestNetHTTPMiddlewareRecordsRequests(t *testing.T) {
-	server, err := testserver.StartMockServer(secretKey, projectKey)
+	server, err := testserver.StartMockServer(middlewareSecretKey, middlewareProjectKey)
 	if err != nil {
 		t.Fatalf("start mock server: %v", err)
 	}
 	defer server.Stop()
 
 	monitor, err := aiko.New(aiko.Config{
-		ProjectKey: projectKey,
-		SecretKey:  secretKey,
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
 		Endpoint:   server.Endpoint(),
 	})
 	if err != nil {
 		t.Fatalf("init monitor: %v", err)
 	}
-	defer shutdown(t, monitor)
+	defer shutdownMonitorHelper(t, monitor)
 
-	handler := nethttp.Middleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := aiko.NetHTTPMiddleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"message":"ok"}`))
 	}))
@@ -77,23 +76,23 @@ func TestNetHTTPMiddlewareRecordsRequests(t *testing.T) {
 }
 
 func TestNetHTTPMiddlewareSynthesizesErrorBody(t *testing.T) {
-	server, err := testserver.StartMockServer(secretKey, projectKey)
+	server, err := testserver.StartMockServer(middlewareSecretKey, middlewareProjectKey)
 	if err != nil {
 		t.Fatalf("start mock server: %v", err)
 	}
 	defer server.Stop()
 
 	monitor, err := aiko.New(aiko.Config{
-		ProjectKey: projectKey,
-		SecretKey:  secretKey,
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
 		Endpoint:   server.Endpoint(),
 	})
 	if err != nil {
 		t.Fatalf("init monitor: %v", err)
 	}
-	defer shutdown(t, monitor)
+	defer shutdownMonitorHelper(t, monitor)
 
-	handler := nethttp.Middleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := aiko.NetHTTPMiddleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 

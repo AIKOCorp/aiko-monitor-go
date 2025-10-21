@@ -1,6 +1,10 @@
-package aiko
+package aiko_test
 
-import "testing"
+import (
+	"testing"
+
+	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
+)
 
 const (
 	validProjectKey = "pk_92Yb_kCIwRhy06UF-FQShg"
@@ -8,10 +12,10 @@ const (
 )
 
 func TestValidateConfigAcceptsProductionEndpoints(t *testing.T) {
-	if err := validateConfig(validProjectKey, validSecretKey, defaultEndpoint); err != nil {
+	if err := aiko.ValidateConfig(validProjectKey, validSecretKey, "https://main.aikocorp.ai/api/monitor/ingest"); err != nil {
 		t.Fatalf("main endpoint should be accepted: %v", err)
 	}
-	if err := validateConfig(validProjectKey, validSecretKey, stagingEndpoint); err != nil {
+	if err := aiko.ValidateConfig(validProjectKey, validSecretKey, "https://staging.aikocorp.ai/api/monitor/ingest"); err != nil {
 		t.Fatalf("staging endpoint should be accepted: %v", err)
 	}
 }
@@ -24,14 +28,14 @@ func TestValidateConfigAllowsLocalhostEndpoints(t *testing.T) {
 	}
 
 	for _, endpoint := range cases {
-		if err := validateConfig(validProjectKey, validSecretKey, endpoint); err != nil {
+		if err := aiko.ValidateConfig(validProjectKey, validSecretKey, endpoint); err != nil {
 			t.Fatalf("endpoint %q should be accepted: %v", endpoint, err)
 		}
 	}
 }
 
 func TestValidateConfigRejectsInvalidProjectKey(t *testing.T) {
-	err := validateConfig("bad", validSecretKey, defaultEndpoint)
+	err := aiko.ValidateConfig("bad", validSecretKey, "https://main.aikocorp.ai/api/monitor/ingest")
 	if err == nil {
 		t.Fatal("expected project key error")
 	}
@@ -42,7 +46,7 @@ func TestValidateConfigRejectsInvalidProjectKey(t *testing.T) {
 }
 
 func TestValidateConfigRejectsInvalidSecretLength(t *testing.T) {
-	err := validateConfig(validProjectKey, "short", defaultEndpoint)
+	err := aiko.ValidateConfig(validProjectKey, "short", "https://main.aikocorp.ai/api/monitor/ingest")
 	if err == nil {
 		t.Fatal("expected secret key error")
 	}
@@ -53,7 +57,7 @@ func TestValidateConfigRejectsInvalidSecretLength(t *testing.T) {
 }
 
 func TestValidateConfigRejectsInvalidEndpoint(t *testing.T) {
-	err := validateConfig(validProjectKey, validSecretKey, "https://example.com")
+	err := aiko.ValidateConfig(validProjectKey, validSecretKey, "https://example.com")
 	if err == nil {
 		t.Fatal("expected endpoint error")
 	}

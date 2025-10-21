@@ -1,4 +1,4 @@
-package nethttp_test
+package aiko_test
 
 import (
 	"fmt"
@@ -6,17 +6,16 @@ import (
 	"net/http/httptest"
 
 	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
-	"github.com/aikocorp/aiko-monitor-go/nethttp"
 )
 
-func ExampleMiddleware() {
+func ExampleNetHTTPMiddleware() {
 	disabled := false
 	monitor, err := aiko.New(aiko.Config{Enabled: &disabled})
 	if err != nil {
 		panic(err)
 	}
 
-	handler := nethttp.Middleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := aiko.NetHTTPMiddleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "ok")
 	}))
 

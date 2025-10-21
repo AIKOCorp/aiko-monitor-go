@@ -9,7 +9,7 @@ import (
 	"time"
 
 	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
-	"github.com/aikocorp/aiko-monitor-go/internal/testserver"
+	testserver "github.com/aikocorp/aiko-monitor-go/test/mockserver"
 )
 
 const (

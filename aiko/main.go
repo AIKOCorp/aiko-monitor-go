@@ -1,5 +1,4 @@
-// Package nethttp provides middleware for instrumenting net/http handlers.
-package nethttp
+package aiko
 
 import (
 	"bufio"
@@ -11,11 +10,22 @@ import (
 	"strings"
 	"time"
 
-	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
+	"github.com/valyala/fasthttp"
 )
 
-// Middleware returns a net/http middleware that records requests via the provided monitor.
-func Middleware(monitor *aiko.Monitor) func(http.Handler) http.Handler {
+func New(cfg Config) (*Monitor, error) {
+	monitor, err := initMonitor(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return monitor, nil
+}
+
+func NewNoop() *Monitor {
+	return newNoopMonitor(Config{})
+}
+
+func NetHTTPMiddleware(monitor *Monitor) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		if monitor == nil || !monitor.Enabled() {
 			return next
@@ -31,9 +41,9 @@ func Middleware(monitor *aiko.Monitor) func(http.Handler) http.Handler {
 				r.Body = io.NopCloser(bytes.NewReader(reqBodyBuf))
 			}
 
-			reqHeaders := aiko.CanonicalHeaders(r.Header)
-			reqHeaders["x-aiko-version"] = aiko.VersionHeaderValue()
-			requestBody := aiko.ParseJSONBody(reqBodyBuf)
+			reqHeaders := CanonicalHeaders(r.Header)
+			reqHeaders["x-aiko-version"] = VersionHeaderValue()
+			requestBody := ParseJSONBody(reqBodyBuf)
 
 			capture := newResponseCapture(w)
 			var recovered any
@@ -49,7 +59,7 @@ func Middleware(monitor *aiko.Monitor) func(http.Handler) http.Handler {
 			}()
 
 			duration := time.Since(start)
-			resHeaders := aiko.CanonicalHeaders(capture.Header())
+			resHeaders := CanonicalHeaders(capture.Header())
 			rawRes := capture.body.Bytes()
 			statusCode := capture.statusCode()
 
@@ -64,13 +74,13 @@ func Middleware(monitor *aiko.Monitor) func(http.Handler) http.Handler {
 				}
 				responseBody = map[string]string{"error": text}
 			default:
-				responseBody = aiko.DecodeResponseBody(rawRes, resHeaders)
+				responseBody = DecodeResponseBody(rawRes, resHeaders)
 			}
 
 			requestURI := r.URL.RequestURI()
-			endpoint := aiko.EndpointFromURL(requestURI)
+			endpoint := EndpointFromURL(requestURI)
 
-			evt := aiko.Event{
+			evt := Event{
 				URL:             requestURI,
 				Endpoint:        endpoint,
 				Method:          strings.ToUpper(r.Method),
@@ -88,6 +98,74 @@ func Middleware(monitor *aiko.Monitor) func(http.Handler) http.Handler {
 				panic(recovered)
 			}
 		})
+	}
+}
+
+func FastHTTPMiddleware(monitor *Monitor, next fasthttp.RequestHandler) fasthttp.RequestHandler {
+	if monitor == nil || !monitor.Enabled() {
+		return next
+	}
+
+	return func(ctx *fasthttp.RequestCtx) {
+		start := time.Now()
+
+		reqHeaders := canonicalFastHTTPHeaders(ctx.Request.Header.VisitAll)
+		reqHeaders["x-aiko-version"] = VersionHeaderValue()
+
+		reqBody := append([]byte(nil), ctx.PostBody()...)
+		requestBody := ParseJSONBody(reqBody)
+
+		var recovered any
+
+		func() {
+			defer func() {
+				if rec := recover(); rec != nil {
+					recovered = rec
+					ctx.Response.ResetBody()
+					ctx.Response.SetStatusCode(fasthttp.StatusInternalServerError)
+				}
+			}()
+			next(ctx)
+		}()
+
+		status := ctx.Response.StatusCode()
+		resHeaders := canonicalFastHTTPHeaders(ctx.Response.Header.VisitAll)
+		rawRes := append([]byte(nil), ctx.Response.Body()...)
+
+		var responseBody any
+		switch {
+		case recovered != nil:
+			responseBody = map[string]string{"error": stringify(recovered)}
+		case len(rawRes) == 0 && status >= 500:
+			msg := fasthttp.StatusMessage(status)
+			if msg == "" {
+				msg = "Internal Server Error"
+			}
+			responseBody = map[string]string{"error": msg}
+		default:
+			responseBody = DecodeResponseBody(rawRes, resHeaders)
+		}
+
+		url := string(ctx.URI().RequestURI())
+		endpoint := EndpointFromURL(url)
+
+		evt := Event{
+			URL:             url,
+			Endpoint:        endpoint,
+			Method:          strings.ToUpper(string(ctx.Method())),
+			StatusCode:      status,
+			RequestHeaders:  reqHeaders,
+			RequestBody:     requestBody,
+			ResponseHeaders: resHeaders,
+			ResponseBody:    responseBody,
+			DurationMS:      time.Since(start).Milliseconds(),
+		}
+
+		monitor.AddEvent(evt)
+
+		if recovered != nil {
+			panic(recovered)
+		}
 	}
 }
 
@@ -151,3 +229,28 @@ var (
 	_ http.Hijacker = (*responseCapture)(nil)
 	_ http.Pusher   = (*responseCapture)(nil)
 )
+
+func canonicalFastHTTPHeaders(visit func(func(key, value []byte))) map[string]string {
+	headers := make(map[string]string)
+	visit(func(k, v []byte) {
+		key := strings.ToLower(string(k))
+		val := string(v)
+		if existing, ok := headers[key]; ok && existing != "" {
+			headers[key] = existing + ", " + val
+		} else {
+			headers[key] = val
+		}
+	})
+	return headers
+}
+
+func stringify(v any) string {
+	switch val := v.(type) {
+	case string:
+		return val
+	case error:
+		return val.Error()
+	default:
+		return fmt.Sprint(val)
+	}
+}

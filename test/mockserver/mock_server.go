@@ -1,5 +1,4 @@
-// Package testserver provides a mock ingest endpoint for integration tests.
-package testserver
+package mockserver
 
 import (
 	"bytes"
@@ -20,7 +19,6 @@ import (
 	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
 )
 
-// MockServer emulates the ingest endpoint used by tests.
 type MockServer struct {
 	projectKey string
 	secret     []byte
@@ -35,7 +33,6 @@ type MockServer struct {
 	eventCh chan aiko.Event
 }
 
-// StartMockServer boots a mock ingest server with signature validation.
 func StartMockServer(secretKey, projectKey string) (*MockServer, error) {
 	secret, err := base64.RawURLEncoding.DecodeString(secretKey)
 	if err != nil {
@@ -140,19 +137,16 @@ func sign(secret, body []byte) []byte {
 	return mac.Sum(nil)
 }
 
-// Endpoint returns the ingest endpoint URL for the mock server.
 func (m *MockServer) Endpoint() string {
 	return m.srv.URL + "/api/monitor/ingest"
 }
 
-// SetResponses configures the sequence of HTTP statuses the mock server should emit.
 func (m *MockServer) SetResponses(statuses []int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.responses = append([]int(nil), statuses...)
 }
 
-// Events returns a snapshot of all received events.
 func (m *MockServer) Events() []aiko.Event {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -161,7 +155,6 @@ func (m *MockServer) Events() []aiko.Event {
 	return out
 }
 
-// Attempts returns the recorded response statuses emitted by the server.
 func (m *MockServer) Attempts() []int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -170,7 +163,6 @@ func (m *MockServer) Attempts() []int {
 	return out
 }
 
-// WaitForEvent blocks until an event is received or the timeout elapses.
 func (m *MockServer) WaitForEvent(timeout time.Duration) (aiko.Event, error) {
 	select {
 	case evt := <-m.eventCh:
@@ -180,7 +172,6 @@ func (m *MockServer) WaitForEvent(timeout time.Duration) (aiko.Event, error) {
 	}
 }
 
-// Stop shuts down the server and releases resources.
 func (m *MockServer) Stop() {
 	if m == nil || m.srv == nil {
 		return
