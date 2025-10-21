@@ -15,6 +15,7 @@ func main() {
 	monitor, err := aiko.New(aiko.Config{
 		ProjectKey: "pk_xNIiFZwJ8tu1GLNsCs4P4w",
 		SecretKey:  "p_E1ygBt4NQgBpN4pCkuklWIYCpxPNJ5ALU4ooULfdw",
+		Endpoint:   "http://localhost:8080/api/monitor/ingest",
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -42,8 +43,8 @@ func main() {
 
 	wrapped := aiko.NetHTTPMiddleware(monitor)(mux)
 
-	log.Println("Listening on :8080")
-	log.Fatal(http.ListenAndServe(":8080", wrapped))
+	log.Println("Listening on :3000")
+	log.Fatal(http.ListenAndServe(":3000", wrapped))
 }
 
 func writeJSON(w http.ResponseWriter, code int, data any) {
@@ -53,6 +54,10 @@ func writeJSON(w http.ResponseWriter, code int, data any) {
 }
 
 func home(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		notFound(w, r)
+		return
+	}
 	fmt.Fprint(w, "<html><body><h1>FastAPI E-commerce API</h1><p>Welcome to our store!</p></body></html>")
 }
 
@@ -128,7 +133,7 @@ func resetPassword(w http.ResponseWriter, r *http.Request) {
 func users(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/users/")
 	if id == "" {
-		http.NotFound(w, r)
+		notFound(w, r)
 		return
 	}
 	if r.Method == http.MethodPatch {
@@ -143,7 +148,7 @@ func users(w http.ResponseWriter, r *http.Request) {
 func products(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimPrefix(r.URL.Path, "/products/")
 	if id == "" || r.Method != http.MethodPut {
-		http.NotFound(w, r)
+		notFound(w, r)
 		return
 	}
 	var body struct {
@@ -238,4 +243,8 @@ func getProfile(w http.ResponseWriter, r *http.Request) {
 
 func errorRoute(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "something went wrong", 500)
+}
+
+func notFound(w http.ResponseWriter, r *http.Request) {
+	http.Error(w, "Not Found", http.StatusNotFound)
 }

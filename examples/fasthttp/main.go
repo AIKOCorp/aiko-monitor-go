@@ -15,6 +15,7 @@ func main() {
 	monitor, err := aiko.New(aiko.Config{
 		ProjectKey: "pk_xNIiFZwJ8tu1GLNsCs4P4w",
 		SecretKey:  "p_E1ygBt4NQgBpN4pCkuklWIYCpxPNJ5ALU4ooULfdw",
+		Endpoint:   "http://localhost:8080/api/monitor/ingest",
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -198,17 +199,21 @@ func main() {
 			ctx.Error("something went wrong", fasthttp.StatusInternalServerError)
 
 		default:
-			ctx.Error("Not Found", fasthttp.StatusNotFound)
+			notFound(ctx)
 		}
 	}
 
 	monitored := aiko.FastHTTPMiddleware(monitor, handler)
-	log.Println("Listening on :8081")
-	log.Fatal(fasthttp.ListenAndServe(":8081", monitored))
+	log.Println("Listening on :3001")
+	log.Fatal(fasthttp.ListenAndServe(":3001", monitored))
 }
 
 func writeJSON(ctx *fasthttp.RequestCtx, status int, data any) {
 	ctx.SetStatusCode(status)
 	ctx.SetContentType("application/json")
 	json.NewEncoder(ctx).Encode(data)
+}
+
+func notFound(ctx *fasthttp.RequestCtx) {
+	ctx.Error("Not Found", fasthttp.StatusNotFound)
 }
