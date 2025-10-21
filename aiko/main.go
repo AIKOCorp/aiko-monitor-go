@@ -78,11 +78,10 @@ func NetHTTPMiddleware(monitor *Monitor) func(http.Handler) http.Handler {
 			}
 
 			requestURI := r.URL.RequestURI()
-			endpoint := EndpointFromURL(requestURI)
 
 			evt := Event{
 				URL:             requestURI,
-				Endpoint:        endpoint,
+				Endpoint:        requestURI,
 				Method:          strings.ToUpper(r.Method),
 				StatusCode:      statusCode,
 				RequestHeaders:  reqHeaders,
@@ -147,11 +146,10 @@ func FastHTTPMiddleware(monitor *Monitor, next fasthttp.RequestHandler) fasthttp
 		}
 
 		url := string(ctx.URI().RequestURI())
-		endpoint := EndpointFromURL(url)
 
 		evt := Event{
 			URL:             url,
-			Endpoint:        endpoint,
+			Endpoint:        url,
 			Method:          strings.ToUpper(string(ctx.Method())),
 			StatusCode:      status,
 			RequestHeaders:  reqHeaders,

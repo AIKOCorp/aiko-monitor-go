@@ -184,7 +184,6 @@ func EndpointFromURL(raw string) string {
 		}
 	}
 
-	path = trimQuery(path)
 	if path == "" {
 		return ""
 	}
@@ -214,16 +213,9 @@ func GzipEvent(evt Event) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-const sdkLanguage = "go"
-
-var sdkVersion = "dev"
-
-func SDKVersion() string {
-	return sdkVersion
-}
-
 func VersionHeaderValue() string {
-	return fmt.Sprintf("%s:%s", sdkLanguage, sdkVersion)
+	// figure out a way to set the version automatically from git tag
+	return fmt.Sprintf("go:%s", "0.0.2")
 }
 
 func redactHeaders(in map[string]string) map[string]string {
@@ -294,13 +286,6 @@ func preferredPath(u *url.URL) string {
 		return u.Path
 	}
 	return ""
-}
-
-func trimQuery(raw string) string {
-	if idx := strings.IndexByte(raw, '?'); idx >= 0 {
-		return raw[:idx]
-	}
-	return raw
 }
 
 func urlParse(raw string) (*url.URL, error) {

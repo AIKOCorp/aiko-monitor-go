@@ -46,7 +46,7 @@ func (m *Monitor) AddEvent(evt Event) {
 	case <-m.closeCh:
 	default:
 		m.logger.Printf("aiko monitor queue is full; dropping event")
-	}
+	} // shouldn't drop
 }
 
 func (m *Monitor) Shutdown(ctx context.Context) error {
