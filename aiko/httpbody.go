@@ -2,6 +2,7 @@ package aiko
 
 import (
 	"bytes"
+	"compress/flate"
 	"compress/gzip"
 	"compress/zlib"
 	"encoding/base64"
@@ -81,22 +82,34 @@ func tryParseJSON(raw []byte) (any, bool) {
 }
 
 func decodeWithEncoding(raw []byte, encoding string) []byte {
-	decoded := raw
-	switch {
-	case strings.Contains(encoding, "gzip"):
+	lower := strings.ToLower(encoding)
+
+	if strings.Contains(lower, "gzip") {
 		if gr, err := gzip.NewReader(bytes.NewReader(raw)); err == nil {
-			if data, derr := io.ReadAll(gr); derr == nil {
-				decoded = data
-			}
+			data, derr := io.ReadAll(gr)
 			gr.Close()
-		}
-	case strings.Contains(encoding, "deflate"):
-		if zr, err := zlib.NewReader(bytes.NewReader(raw)); err == nil {
-			if data, derr := io.ReadAll(zr); derr == nil {
-				decoded = data
+			if derr == nil {
+				return data
 			}
-			zr.Close()
 		}
 	}
-	return decoded
+
+	if strings.Contains(lower, "deflate") {
+		if zr, err := zlib.NewReader(bytes.NewReader(raw)); err == nil {
+			data, derr := io.ReadAll(zr)
+			zr.Close()
+			if derr == nil {
+				return data
+			}
+		}
+		if fr := flate.NewReader(bytes.NewReader(raw)); fr != nil {
+			data, err := io.ReadAll(fr)
+			fr.Close()
+			if err == nil {
+				return data
+			}
+		}
+	}
+
+	return raw
 }
