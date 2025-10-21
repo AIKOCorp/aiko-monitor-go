@@ -49,12 +49,12 @@ func containsLiteralIP(s string) bool {
 }
 
 func TestRedactArrayElements(t *testing.T) {
-	value := []interface{}{"user@example.com", "no pii"}
+	value := []any{"user@example.com", "no pii"}
 	redacted := redactValue(value)
 
-	arr, ok := redacted.([]interface{})
+	arr, ok := redacted.([]any)
 	if !ok {
-		t.Fatalf("expected []interface{}, got %T", redacted)
+		t.Fatalf("expected []any, got %T", redacted)
 	}
 	if arr[0] != redactionMask {
 		t.Fatalf("expected first element redacted, got %v", arr[0])
@@ -68,7 +68,7 @@ func TestDecodeResponseBodyRespectsContentTypes(t *testing.T) {
 	jsonBody := []byte(`{"x":1}`)
 	jsonHeaders := map[string]string{"content-type": "application/json"}
 	parsed := DecodeResponseBody(jsonBody, jsonHeaders)
-	obj, ok := parsed.(map[string]interface{})
+	obj, ok := parsed.(map[string]any)
 	if !ok || obj["x"].(float64) != 1 {
 		t.Fatalf("expected JSON object, got %#v", parsed)
 	}
@@ -95,7 +95,7 @@ func TestDecodeResponseBodyRespectsContentTypes(t *testing.T) {
 func TestDecodeResponseBodyBestEffortWithoutHeaders(t *testing.T) {
 	jsonBody := []byte(`{"message":"ok"}`)
 	parsed := DecodeResponseBody(jsonBody, map[string]string{})
-	obj, ok := parsed.(map[string]interface{})
+	obj, ok := parsed.(map[string]any)
 	if !ok || obj["message"].(string) != "ok" {
 		t.Fatalf("expected JSON object fallback, got %#v", parsed)
 	}
@@ -166,13 +166,13 @@ func TestSignMatchesKnownVectors(t *testing.T) {
 func TestGzipEventRoundTrip(t *testing.T) {
 	evt := Event{
 		URL:             "http://example.com/api",
-		Endpoint:        "/api",
+		Endpoint:        "/api?q=a",
 		Method:          "GET",
 		StatusCode:      200,
 		RequestHeaders:  map[string]string{"content-type": "application/json"},
-		RequestBody:     map[string]interface{}{"a": 1.0},
+		RequestBody:     map[string]any{"a": 1.0},
 		ResponseHeaders: map[string]string{"content-type": "application/json"},
-		ResponseBody:    map[string]interface{}{"ok": true},
+		ResponseBody:    map[string]any{"ok": true},
 		DurationMS:      10,
 	}
 

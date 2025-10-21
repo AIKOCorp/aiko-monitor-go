@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// EndpointFromURL extracts a normalized request path without query parameters.
 func EndpointFromURL(raw string) string {
 	if raw == "" {
 		return ""

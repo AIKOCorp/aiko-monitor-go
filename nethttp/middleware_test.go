@@ -117,7 +117,7 @@ func TestNetHTTPMiddlewareSynthesizesErrorBody(t *testing.T) {
 		t.Fatalf("expected status 500, got %d", event.StatusCode)
 	}
 
-	body, ok := event.ResponseBody.(map[string]interface{})
+	body, ok := event.ResponseBody.(map[string]any)
 	if !ok {
 		t.Fatalf("expected map response body, got %T", event.ResponseBody)
 	}

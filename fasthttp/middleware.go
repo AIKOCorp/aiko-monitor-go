@@ -25,7 +25,7 @@ func Middleware(monitor *aiko.Monitor, next fasthttp.RequestHandler) fasthttp.Re
 		reqBody := append([]byte(nil), ctx.PostBody()...)
 		requestBody := aiko.ParseJSONBody(reqBody)
 
-		var recovered interface{}
+		var recovered any
 
 		func() {
 			defer func() {
@@ -42,7 +42,7 @@ func Middleware(monitor *aiko.Monitor, next fasthttp.RequestHandler) fasthttp.Re
 		resHeaders := canonicalHeaders(ctx.Response.Header.VisitAll)
 		rawRes := append([]byte(nil), ctx.Response.Body()...)
 
-		var responseBody interface{}
+		var responseBody any
 		switch {
 		case recovered != nil:
 			responseBody = map[string]string{"error": stringify(recovered)}
@@ -93,7 +93,7 @@ func canonicalHeaders(visit func(func(key, value []byte))) map[string]string {
 	return headers
 }
 
-func stringify(v interface{}) string {
+func stringify(v any) string {
 	switch val := v.(type) {
 	case string:
 		return val

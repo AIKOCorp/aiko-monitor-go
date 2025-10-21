@@ -36,7 +36,7 @@ func Middleware(monitor *aiko.Monitor) func(http.Handler) http.Handler {
 			requestBody := aiko.ParseJSONBody(reqBodyBuf)
 
 			capture := newResponseCapture(w)
-			var recovered interface{}
+			var recovered any
 
 			func() {
 				defer func() {
@@ -53,7 +53,7 @@ func Middleware(monitor *aiko.Monitor) func(http.Handler) http.Handler {
 			rawRes := capture.body.Bytes()
 			statusCode := capture.statusCode()
 
-			var responseBody interface{}
+			var responseBody any
 			switch {
 			case recovered != nil:
 				responseBody = map[string]string{"error": fmt.Sprint(recovered)}

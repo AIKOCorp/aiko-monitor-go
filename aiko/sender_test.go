@@ -59,8 +59,8 @@ func TestSenderDeliversRedactedEvent(t *testing.T) {
 			"Authorization":   "Bearer secret",
 			"X-Forwarded-For": "2001:0DB8:85A3:0000:0000:8A2E:0370:7334",
 		},
-		RequestBody: map[string]interface{}{
-			"profile": map[string]interface{}{
+		RequestBody: map[string]any{
+			"profile": map[string]any{
 				"email": "user@example.com",
 				"note":  "ping 203.0.113.10",
 			},
@@ -68,7 +68,7 @@ func TestSenderDeliversRedactedEvent(t *testing.T) {
 		ResponseHeaders: map[string]string{
 			"Set-Cookie": "id=1",
 		},
-		ResponseBody: map[string]interface{}{"ok": true},
+		ResponseBody: map[string]any{"ok": true},
 		DurationMS:   42,
 	}
 
@@ -99,7 +99,7 @@ func TestSenderDeliversRedactedEvent(t *testing.T) {
 		t.Fatalf("expected x-aiko-version to start with go:, got %s", version)
 	}
 
-	profile := received.RequestBody.(map[string]interface{})["profile"].(map[string]interface{})
+	profile := received.RequestBody.(map[string]any)["profile"].(map[string]any)
 	if email := profile["email"].(string); email != "[REDACTED]" {
 		t.Fatalf("expected email redacted, got %s", email)
 	}
@@ -131,9 +131,9 @@ func TestSenderShutdownDrainsPendingEvents(t *testing.T) {
 			Method:          "GET",
 			StatusCode:      202,
 			RequestHeaders:  map[string]string{},
-			RequestBody:     map[string]interface{}{},
+			RequestBody:     map[string]any{},
 			ResponseHeaders: map[string]string{},
-			ResponseBody:    map[string]interface{}{},
+			ResponseBody:    map[string]any{},
 			DurationMS:      5,
 		})
 	}
@@ -165,9 +165,9 @@ func TestSenderRetriesOnServerError(t *testing.T) {
 		Method:          "POST",
 		StatusCode:      500,
 		RequestHeaders:  map[string]string{},
-		RequestBody:     map[string]interface{}{},
+		RequestBody:     map[string]any{},
 		ResponseHeaders: map[string]string{},
-		ResponseBody:    map[string]interface{}{},
+		ResponseBody:    map[string]any{},
 		DurationMS:      25,
 	})
 

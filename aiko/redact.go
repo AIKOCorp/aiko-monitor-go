@@ -53,10 +53,10 @@ func redactHeaders(in map[string]string) map[string]string {
 	return out
 }
 
-func redactValue(value interface{}) interface{} {
+func redactValue(value any) any {
 	switch v := value.(type) {
-	case map[string]interface{}:
-		out := make(map[string]interface{}, len(v))
+	case map[string]any:
+		out := make(map[string]any, len(v))
 		for key, val := range v {
 			if _, ok := sensitiveKeys[strings.ToLower(key)]; ok {
 				out[key] = redactionMask
@@ -66,7 +66,7 @@ func redactValue(value interface{}) interface{} {
 		}
 		return out
 	case map[string]string:
-		out := make(map[string]interface{}, len(v))
+		out := make(map[string]any, len(v))
 		for key, val := range v {
 			if _, ok := sensitiveKeys[strings.ToLower(key)]; ok {
 				out[key] = redactionMask
@@ -75,14 +75,14 @@ func redactValue(value interface{}) interface{} {
 			}
 		}
 		return out
-	case []interface{}:
-		out := make([]interface{}, len(v))
+	case []any:
+		out := make([]any, len(v))
 		for i, item := range v {
 			out[i] = redactValue(item)
 		}
 		return out
 	case []string:
-		out := make([]interface{}, len(v))
+		out := make([]any, len(v))
 		for i, item := range v {
 			out[i] = redactValue(item)
 		}

@@ -7,9 +7,9 @@ type Event struct {
 	Method          string            `json:"method"`
 	StatusCode      int               `json:"status_code"`
 	RequestHeaders  map[string]string `json:"request_headers"`
-	RequestBody     interface{}       `json:"request_body"`
+	RequestBody     any               `json:"request_body"`
 	ResponseHeaders map[string]string `json:"response_headers"`
-	ResponseBody    interface{}       `json:"response_body"`
+	ResponseBody    any               `json:"response_body"`
 	DurationMS      int64             `json:"duration_ms"`
 }
 

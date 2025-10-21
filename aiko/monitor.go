@@ -27,28 +27,18 @@ var (
 	localEndpointPattern = regexp.MustCompile(`^http://(?:localhost|127\.0\.0\.1|\[::1\]):\d+/api/monitor/ingest$`)
 )
 
-// Config controls how a Monitor communicates with the Aiko ingest service.
 type Config struct {
-	// ProjectKey identifies the project in Aiko. Required unless the monitor is disabled.
 	ProjectKey string
-	// SecretKey authenticates requests. Required unless the monitor is disabled.
-	SecretKey string
-	// Endpoint overrides the ingest endpoint. Defaults to the production endpoint.
-	Endpoint string
-	// Enabled toggles delivery. When set to false the monitor becomes a noop and skips validation.
-	Enabled *bool
+	SecretKey  string
+	Endpoint   string
+	Enabled    *bool
 
-	// MaxConcurrentSends caps in-flight deliveries. Defaults to 5.
 	MaxConcurrentSends int
-	// QueueSize controls the buffered event queue capacity. Defaults to 5000.
-	QueueSize int
-	// HTTPClient supplies a custom client for outbound requests.
-	HTTPClient *http.Client
-	// Logger receives diagnostic messages (default silent).
-	Logger *log.Logger
+	QueueSize          int
+	HTTPClient         *http.Client
+	Logger             *log.Logger
 }
 
-// Monitor coordinates event collection and delivery to Aiko.
 type Monitor struct {
 	cfg     Config
 	secret  []byte
@@ -63,7 +53,6 @@ type Monitor struct {
 	rnd     *rand.Rand
 }
 
-// New constructs a Monitor using the provided configuration.
 func New(cfg Config) (*Monitor, error) {
 	enabled := true
 	if cfg.Enabled != nil {
@@ -134,7 +123,6 @@ func New(cfg Config) (*Monitor, error) {
 	return monitor, nil
 }
 
-// NewNoop returns a disabled Monitor that drops all events.
 func NewNoop() *Monitor {
 	return newNoopMonitor(Config{})
 }
@@ -175,7 +163,6 @@ func validateConfig(projectKey, secretKey, endpoint string) error {
 	return nil
 }
 
-// AddEvent enqueues an event for delivery. Safe for concurrent use.
 func (m *Monitor) AddEvent(evt Event) {
 	if m == nil || !m.enabled {
 		return
@@ -188,7 +175,6 @@ func (m *Monitor) AddEvent(evt Event) {
 	}
 }
 
-// Shutdown flushes pending events and releases resources.
 func (m *Monitor) Shutdown(ctx context.Context) error {
 	if m == nil {
 		return nil
@@ -219,12 +205,10 @@ func (m *Monitor) Shutdown(ctx context.Context) error {
 	}
 }
 
-// Close implements io.Closer by delegating to Shutdown with a background context.
 func (m *Monitor) Close() error {
 	return m.Shutdown(context.Background())
 }
 
-// Enabled reports whether the monitor is actively capturing events.
 func (m *Monitor) Enabled() bool {
 	if m == nil {
 		return false
