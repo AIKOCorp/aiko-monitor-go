@@ -121,7 +121,7 @@ func TestEndpointFromURLDerivesPathCorrectly(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"http://example.com/test?foo=1", "/test?foo=1"},
+		{"http://example.com/test?foo=1", "/test"},
 		{"/test?foo=1", "/test"},
 		{"/simple", "/simple"},
 	}

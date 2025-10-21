@@ -1,16 +1,17 @@
-package integrations
+// Package fasthttp provides middleware for instrumenting github.com/valyala/fasthttp handlers.
+package fasthttp
 
 import (
 	"fmt"
 	"strings"
 	"time"
 
-	aiko "github.com/aikocorp/aiko-monitor-go"
+	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
 	"github.com/valyala/fasthttp"
 )
 
-// Fasthttp attaches Aiko monitoring to a fasthttp request handler.
-func Fasthttp(monitor *aiko.Monitor, next fasthttp.RequestHandler) fasthttp.RequestHandler {
+// Middleware wraps a fasthttp handler with Aiko monitoring.
+func Middleware(monitor *aiko.Monitor, next fasthttp.RequestHandler) fasthttp.RequestHandler {
 	if monitor == nil || !monitor.Enabled() {
 		return next
 	}
@@ -18,7 +19,7 @@ func Fasthttp(monitor *aiko.Monitor, next fasthttp.RequestHandler) fasthttp.Requ
 	return func(ctx *fasthttp.RequestCtx) {
 		start := time.Now()
 
-		reqHeaders := flattenHeaders(ctx.Request.Header.VisitAll)
+		reqHeaders := canonicalHeaders(ctx.Request.Header.VisitAll)
 		reqHeaders["x-aiko-version"] = aiko.VersionHeaderValue()
 
 		reqBody := append([]byte(nil), ctx.PostBody()...)
@@ -38,7 +39,7 @@ func Fasthttp(monitor *aiko.Monitor, next fasthttp.RequestHandler) fasthttp.Requ
 		}()
 
 		status := ctx.Response.StatusCode()
-		resHeaders := flattenHeaders(ctx.Response.Header.VisitAll)
+		resHeaders := canonicalHeaders(ctx.Response.Header.VisitAll)
 		rawRes := append([]byte(nil), ctx.Response.Body()...)
 
 		var responseBody interface{}
@@ -78,7 +79,7 @@ func Fasthttp(monitor *aiko.Monitor, next fasthttp.RequestHandler) fasthttp.Requ
 	}
 }
 
-func flattenHeaders(visit func(func(key, value []byte))) map[string]string {
+func canonicalHeaders(visit func(func(key, value []byte))) map[string]string {
 	headers := make(map[string]string)
 	visit(func(k, v []byte) {
 		key := strings.ToLower(string(k))

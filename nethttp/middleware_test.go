@@ -1,4 +1,4 @@
-package integrations
+package nethttp_test
 
 import (
 	"context"
@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	aiko "github.com/aikocorp/aiko-monitor-go"
-	"github.com/aikocorp/aiko-monitor-go/internaltest"
+	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
+	"github.com/aikocorp/aiko-monitor-go/internal/testserver"
+	"github.com/aikocorp/aiko-monitor-go/nethttp"
 )
 
 const (
@@ -27,13 +28,13 @@ func shutdown(t *testing.T, monitor *aiko.Monitor) {
 }
 
 func TestNetHTTPMiddlewareRecordsRequests(t *testing.T) {
-	server, err := internaltest.StartMockServer(secretKey, projectKey)
+	server, err := testserver.StartMockServer(secretKey, projectKey)
 	if err != nil {
 		t.Fatalf("start mock server: %v", err)
 	}
 	defer server.Stop()
 
-	monitor, err := aiko.Init(aiko.Config{
+	monitor, err := aiko.New(aiko.Config{
 		ProjectKey: projectKey,
 		SecretKey:  secretKey,
 		Endpoint:   server.Endpoint(),
@@ -43,7 +44,7 @@ func TestNetHTTPMiddlewareRecordsRequests(t *testing.T) {
 	}
 	defer shutdown(t, monitor)
 
-	handler := NetHTTP(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := nethttp.Middleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"message":"ok"}`))
 	}))
@@ -73,17 +74,16 @@ func TestNetHTTPMiddlewareRecordsRequests(t *testing.T) {
 	if ct := event.ResponseHeaders["content-type"]; !strings.Contains(ct, "application/json") {
 		t.Fatalf("expected content-type header, got %s", ct)
 	}
-
 }
 
 func TestNetHTTPMiddlewareSynthesizesErrorBody(t *testing.T) {
-	server, err := internaltest.StartMockServer(secretKey, projectKey)
+	server, err := testserver.StartMockServer(secretKey, projectKey)
 	if err != nil {
 		t.Fatalf("start mock server: %v", err)
 	}
 	defer server.Stop()
 
-	monitor, err := aiko.Init(aiko.Config{
+	monitor, err := aiko.New(aiko.Config{
 		ProjectKey: projectKey,
 		SecretKey:  secretKey,
 		Endpoint:   server.Endpoint(),
@@ -93,7 +93,7 @@ func TestNetHTTPMiddlewareSynthesizesErrorBody(t *testing.T) {
 	}
 	defer shutdown(t, monitor)
 
-	handler := NetHTTP(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := nethttp.Middleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 

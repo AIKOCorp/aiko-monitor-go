@@ -1,4 +1,5 @@
-package internaltest
+// Package testserver provides a mock ingest endpoint for integration tests.
+package testserver
 
 import (
 	"bytes"
@@ -16,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	aiko "github.com/aikocorp/aiko-monitor-go"
+	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
 )
 
 // MockServer emulates the ingest endpoint used by tests.

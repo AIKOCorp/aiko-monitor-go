@@ -1,4 +1,5 @@
-package integrations
+// Package nethttp provides middleware for instrumenting net/http handlers.
+package nethttp
 
 import (
 	"bufio"
@@ -10,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	aiko "github.com/aikocorp/aiko-monitor-go"
+	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
 )
 
-// NetHTTP returns a net/http middleware that records requests via the provided monitor.
-func NetHTTP(monitor *aiko.Monitor) func(http.Handler) http.Handler {
+// Middleware returns a net/http middleware that records requests via the provided monitor.
+func Middleware(monitor *aiko.Monitor) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		if monitor == nil || !monitor.Enabled() {
 			return next

@@ -2,8 +2,8 @@ package aiko
 
 import (
 	"bytes"
-	"compress/flate"
 	"compress/gzip"
+	"compress/zlib"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -12,23 +12,22 @@ import (
 	"unicode/utf8"
 )
 
-// CanonicalHeaders flattens HTTP headers into a lowercase map with comma-joined values.
+// CanonicalHeaders flattens HTTP headers into lowercase keys with comma-joined values.
 func CanonicalHeaders(h http.Header) map[string]string {
 	if h == nil {
 		return map[string]string{}
 	}
 	out := make(map[string]string, len(h))
 	for key, values := range h {
-		lower := strings.ToLower(key)
 		if len(values) == 0 {
 			continue
 		}
-		out[lower] = strings.Join(values, ", ")
+		out[strings.ToLower(key)] = strings.Join(values, ", ")
 	}
 	return out
 }
 
-// ParseJSONBody attempts to decode JSON payloads, defaulting to an empty object or raw string.
+// ParseJSONBody returns a decoded JSON representation or a best-effort fallback.
 func ParseJSONBody(raw []byte) interface{} {
 	if len(raw) == 0 {
 		return map[string]interface{}{}
@@ -40,7 +39,7 @@ func ParseJSONBody(raw []byte) interface{} {
 	return string(raw)
 }
 
-// DecodeResponseBody interprets response payloads according to content type and encoding.
+// DecodeResponseBody interprets a response payload based on headers and encoding.
 func DecodeResponseBody(raw []byte, headers map[string]string) interface{} {
 	if len(raw) == 0 {
 		return map[string]interface{}{}
@@ -95,11 +94,11 @@ func decodeWithEncoding(raw []byte, encoding string) []byte {
 			gr.Close()
 		}
 	case strings.Contains(encoding, "deflate"):
-		if fr := flate.NewReader(bytes.NewReader(raw)); fr != nil {
-			if data, err := io.ReadAll(fr); err == nil {
+		if zr, err := zlib.NewReader(bytes.NewReader(raw)); err == nil {
+			if data, derr := io.ReadAll(zr); derr == nil {
 				decoded = data
 			}
-			fr.Close()
+			zr.Close()
 		}
 	}
 	return decoded

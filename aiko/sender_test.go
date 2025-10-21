@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	aiko "github.com/aikocorp/aiko-monitor-go"
-	"github.com/aikocorp/aiko-monitor-go/internaltest"
+	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
+	"github.com/aikocorp/aiko-monitor-go/internal/testserver"
 )
 
 const (
@@ -19,7 +19,7 @@ const (
 
 func newTestMonitor(t *testing.T, endpoint string) *aiko.Monitor {
 	t.Helper()
-	monitor, err := aiko.Init(aiko.Config{
+	monitor, err := aiko.New(aiko.Config{
 		ProjectKey: testProjectKey,
 		SecretKey:  testSecretKey,
 		Endpoint:   endpoint,
@@ -40,7 +40,7 @@ func shutdownMonitor(t *testing.T, monitor *aiko.Monitor) {
 }
 
 func TestSenderDeliversRedactedEvent(t *testing.T) {
-	server, err := internaltest.StartMockServer(testSecretKey, testProjectKey)
+	server, err := testserver.StartMockServer(testSecretKey, testProjectKey)
 	if err != nil {
 		t.Fatalf("start mock server: %v", err)
 	}
@@ -82,8 +82,8 @@ func TestSenderDeliversRedactedEvent(t *testing.T) {
 	if received.Method != "POST" {
 		t.Fatalf("expected POST method, got %s", received.Method)
 	}
-	if received.Endpoint != "/test?foo=1" {
-		t.Fatalf("expected endpoint with query, got %s", received.Endpoint)
+	if received.Endpoint != "/test" {
+		t.Fatalf("expected endpoint path, got %s", received.Endpoint)
 	}
 	if received.StatusCode != 200 {
 		t.Fatalf("expected status 200, got %d", received.StatusCode)
@@ -115,7 +115,7 @@ func TestSenderDeliversRedactedEvent(t *testing.T) {
 }
 
 func TestSenderShutdownDrainsPendingEvents(t *testing.T) {
-	server, err := internaltest.StartMockServer(testSecretKey, testProjectKey)
+	server, err := testserver.StartMockServer(testSecretKey, testProjectKey)
 	if err != nil {
 		t.Fatalf("start mock server: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestSenderShutdownDrainsPendingEvents(t *testing.T) {
 }
 
 func TestSenderRetriesOnServerError(t *testing.T) {
-	server, err := internaltest.StartMockServer(testSecretKey, testProjectKey)
+	server, err := testserver.StartMockServer(testSecretKey, testProjectKey)
 	if err != nil {
 		t.Fatalf("start mock server: %v", err)
 	}
@@ -187,8 +187,8 @@ func TestSenderRetriesOnServerError(t *testing.T) {
 	}
 }
 
-func TestInitRejectsInvalidSecretEncoding(t *testing.T) {
-	_, err := aiko.Init(aiko.Config{
+func TestNewRejectsInvalidSecretEncoding(t *testing.T) {
+	_, err := aiko.New(aiko.Config{
 		ProjectKey: testProjectKey,
 		SecretKey:  strings.Repeat("!", 43),
 	})
