@@ -1,0 +1,47 @@
+name: Go Build, Test, and Vet
+
+on:
+  pull_request:
+    branches:
+      - "*"
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-vet:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go environment
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build packages
+        run: go build ./...
+
+      - name: Verify formatting
+        run: |
+          CHANGED="$(gofmt -s -l .)"
+          if [ -n "$CHANGED" ]; then
+            echo "The following files need gofmt:"
+            echo "$CHANGED"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests with race detection and coverage
+        run: go test -v -race -coverprofile=coverage.out ./...
