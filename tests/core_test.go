@@ -168,8 +168,8 @@ func TestDecodeResponseBodyDecodesCompressedPayloads(t *testing.T) {
 	}
 
 	broken := [][]byte{
-		[]byte{0x1f, 0x8b, 0x08, 0x00}, // truncated gzip header
-		[]byte{0x78},                   // truncated zlib
+		{0x1f, 0x8b, 0x08, 0x00}, // truncated gzip header
+		{0x78},                   // truncated zlib
 	}
 	for i, blob := range broken {
 		out := aiko.DecodeResponseBody(blob, map[string]string{
