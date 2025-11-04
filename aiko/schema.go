@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	defaultEndpoint           = "https://main.aikocorp.ai/api/monitor/ingest"
+	defaultEndpoint           = "https://monitor.aikocorp.ai/api/ingest"
 	stagingEndpoint           = "https://staging.aikocorp.ai/api/monitor/ingest"
 	defaultMaxConcurrentSends = 5
 	defaultQueueSize          = 5000
@@ -53,7 +53,7 @@ func ValidateConfig(projectKey, secretKey, endpoint string) error {
 		return errors.New("secretKey must be exactly 43 base64url characters")
 	}
 	if endpoint != defaultEndpoint && endpoint != stagingEndpoint && !localEndpointPattern.MatchString(endpoint) {
-		return errors.New("endpoint must match http://localhost:PORT/api/monitor/ingest or be 'https://main.aikocorp.ai/api/monitor/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'")
+		return errors.New("endpoint must match http://localhost:PORT/api/monitor/ingest or be 'https://monitor.aikocorp.ai/api/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'")
 	}
 	return nil
 }

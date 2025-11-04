@@ -12,7 +12,7 @@ const (
 )
 
 func TestValidateConfigAcceptsProductionEndpoints(t *testing.T) {
-	if err := aiko.ValidateConfig(validProjectKey, validSecretKey, "https://main.aikocorp.ai/api/monitor/ingest"); err != nil {
+	if err := aiko.ValidateConfig(validProjectKey, validSecretKey, "https://monitor.aikocorp.ai/api/ingest"); err != nil {
 		t.Fatalf("main endpoint should be accepted: %v", err)
 	}
 	if err := aiko.ValidateConfig(validProjectKey, validSecretKey, "https://staging.aikocorp.ai/api/monitor/ingest"); err != nil {
@@ -35,7 +35,7 @@ func TestValidateConfigAllowsLocalhostEndpoints(t *testing.T) {
 }
 
 func TestValidateConfigRejectsInvalidProjectKey(t *testing.T) {
-	err := aiko.ValidateConfig("bad", validSecretKey, "https://main.aikocorp.ai/api/monitor/ingest")
+	err := aiko.ValidateConfig("bad", validSecretKey, "https://monitor.aikocorp.ai/api/ingest")
 	if err == nil {
 		t.Fatal("expected project key error")
 	}
@@ -46,7 +46,7 @@ func TestValidateConfigRejectsInvalidProjectKey(t *testing.T) {
 }
 
 func TestValidateConfigRejectsInvalidSecretLength(t *testing.T) {
-	err := aiko.ValidateConfig(validProjectKey, "short", "https://main.aikocorp.ai/api/monitor/ingest")
+	err := aiko.ValidateConfig(validProjectKey, "short", "https://monitor.aikocorp.ai/api/ingest")
 	if err == nil {
 		t.Fatal("expected secret key error")
 	}
@@ -61,7 +61,7 @@ func TestValidateConfigRejectsInvalidEndpoint(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected endpoint error")
 	}
-	expected := "endpoint must match http://localhost:PORT/api/monitor/ingest or be 'https://main.aikocorp.ai/api/monitor/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'"
+	expected := "endpoint must match http://localhost:PORT/api/monitor/ingest or be 'https://monitor.aikocorp.ai/api/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'"
 	if err.Error() != expected {
 		t.Fatalf("expected %q, got %q", expected, err.Error())
 	}

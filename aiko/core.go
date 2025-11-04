@@ -188,7 +188,7 @@ func GzipEvent(evt Event) ([]byte, error) {
 
 func VersionHeaderValue() string {
 	// figure out a way to set the version automatically from git tag
-	return fmt.Sprintf("go:%s", "0.0.2")
+	return fmt.Sprintf("go:%s", "0.0.3")
 }
 
 func redactHeaders(in map[string]string) map[string]string {
