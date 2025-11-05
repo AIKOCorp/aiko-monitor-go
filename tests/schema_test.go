@@ -22,9 +22,9 @@ func TestValidateConfigAcceptsProductionEndpoints(t *testing.T) {
 
 func TestValidateConfigAllowsLocalhostEndpoints(t *testing.T) {
 	cases := []string{
-		"http://localhost:8080/api/monitor/ingest",
-		"http://127.0.0.1:9000/api/monitor/ingest",
-		"http://[::1]:3000/api/monitor/ingest",
+		"http://localhost:8080/api/ingest",
+		"http://127.0.0.1:9000/api/ingest",
+		"http://[::1]:3000/api/ingest",
 	}
 
 	for _, endpoint := range cases {
@@ -61,7 +61,7 @@ func TestValidateConfigRejectsInvalidEndpoint(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected endpoint error")
 	}
-	expected := "endpoint must match http://localhost:PORT/api/monitor/ingest or be 'https://monitor.aikocorp.ai/api/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'"
+	expected := "endpoint must match http://localhost:PORT/api/ingest or be 'https://monitor.aikocorp.ai/api/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'"
 	if err.Error() != expected {
 		t.Fatalf("expected %q, got %q", expected, err.Error())
 	}

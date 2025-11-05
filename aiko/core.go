@@ -13,10 +13,21 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"unicode/utf8"
 )
+
+var priorityClientIPHeaders = []string{
+	"cf-connecting-ip",
+	"x-vercel-forwarded-for",
+	"x-sentry-forwarded-for",
+	"x-forwarded-for",
+	"x-real-ip",
+	"x-cluster-client-ip",
+	"fastly-client-ip",
+}
 
 func CanonicalHeaders(h http.Header) map[string]string {
 	if h == nil {
@@ -181,4 +192,91 @@ func tryParseJSON(raw []byte) (any, bool) {
 		return out, true
 	}
 	return nil, false
+}
+
+func extractClientIP(headers map[string]string, peerIP string) string {
+	lowered := make(map[string]string, len(headers))
+	for key, value := range headers {
+		lowered[strings.ToLower(key)] = value
+	}
+
+	for _, name := range priorityClientIPHeaders {
+		if value, ok := lowered[name]; ok {
+			if ip := firstIPFromList(value); ip != "" {
+				return ip
+			}
+		}
+	}
+
+	if forwarded, ok := lowered["forwarded"]; ok {
+		if ip := parseForwardedHeader(forwarded); ip != "" {
+			return ip
+		}
+	}
+
+	if validIP(peerIP) {
+		return normalizeIP(peerIP)
+	}
+
+	return ""
+}
+
+func firstIPFromList(value string) string {
+	parts := strings.Split(value, ",")
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		trimmed = strings.Trim(trimmed, "\"")
+		if validIP(trimmed) {
+			return normalizeIP(trimmed)
+		}
+	}
+	return ""
+}
+
+func parseForwardedHeader(value string) string {
+	segments := strings.Split(value, ";")
+	for _, segment := range segments {
+		items := strings.Split(segment, ",")
+		for _, item := range items {
+			if !strings.Contains(strings.ToLower(item), "for=") {
+				continue
+			}
+			parts := strings.SplitN(item, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			candidate := strings.TrimSpace(parts[1])
+			candidate = strings.Trim(candidate, "\"")
+			if validIP(candidate) {
+				return normalizeIP(candidate)
+			}
+		}
+	}
+	return ""
+}
+
+func validIP(value string) bool {
+	if value == "" {
+		return false
+	}
+	value = normalizeIP(value)
+	return net.ParseIP(value) != nil
+}
+
+func normalizeIP(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "[")
+	value = strings.TrimSuffix(value, "]")
+	return value
+}
+
+func peerIPFromRemoteAddr(addr string) string {
+	if addr == "" {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err == nil {
+		return host
+	}
+	return addr
 }

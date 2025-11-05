@@ -22,13 +22,18 @@ type Monitor struct {
 	secret  []byte
 	client  *http.Client
 	logger  *log.Logger
-	events  chan Event
+	events  chan queuedEvent
 	sem     chan struct{}
 	wg      sync.WaitGroup
 	once    sync.Once
 	closeCh chan struct{}
 	enabled bool
 	rnd     *rand.Rand
+}
+
+type queuedEvent struct {
+	event    Event
+	clientIP string
 }
 
 const (
@@ -38,14 +43,19 @@ const (
 	requestTimeout = 10 * time.Second
 )
 
+// kept for backward comptibility
 func (m *Monitor) AddEvent(evt Event) {
 	if m == nil || !m.enabled {
 		return
 	}
 
 	evt = normalizeEvent(evt)
+	m.addEvent(evt, "")
+}
+
+func (m *Monitor) addEvent(evt Event, clientIP string) {
 	select {
-	case m.events <- evt:
+	case m.events <- queuedEvent{event: evt, clientIP: clientIP}:
 	case <-m.closeCh:
 	default:
 		m.logger.Printf("aiko monitor queue is full; dropping event")
@@ -102,14 +112,14 @@ func (m *Monitor) Enabled() bool {
 
 func (m *Monitor) run() {
 	defer m.wg.Done()
-	for evt := range m.events {
+	for qe := range m.events {
 		m.sem <- struct{}{}
 		m.wg.Add(1)
-		go func(e Event) {
+		go func(e queuedEvent) {
 			defer m.wg.Done()
 			defer func() { <-m.sem }()
 			m.send(e)
-		}(evt)
+		}(qe)
 	}
 }
 
@@ -121,8 +131,8 @@ func (m *Monitor) jitter(base time.Duration) time.Duration {
 	return time.Duration(float64(base) * factor)
 }
 
-func (m *Monitor) send(evt Event) {
-	payload, err := GzipEvent(evt)
+func (m *Monitor) send(qe queuedEvent) {
+	payload, err := GzipEvent(qe.event)
 	if err != nil {
 		return
 	}
@@ -142,6 +152,9 @@ func (m *Monitor) send(evt Event) {
 		req.Header.Set("Content-Encoding", "gzip")
 		req.Header.Set("X-Project-Key", m.cfg.ProjectKey)
 		req.Header.Set("X-Signature", signature)
+		if qe.clientIP != "" {
+			req.Header.Set("X-Client-IP", qe.clientIP)
+		}
 
 		resp, err := m.client.Do(req)
 		cancel()
@@ -228,7 +241,7 @@ func newMonitor(cfg Config, secret []byte, client *http.Client, logger *log.Logg
 		secret:  secret,
 		client:  client,
 		logger:  logger,
-		events:  make(chan Event, cfg.QueueSize),
+		events:  make(chan queuedEvent, cfg.QueueSize),
 		sem:     make(chan struct{}, cfg.MaxConcurrentSends),
 		closeCh: make(chan struct{}),
 		enabled: true,

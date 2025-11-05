@@ -124,6 +124,46 @@ func TestNetHTTPMiddlewareRecordsRequests(t *testing.T) {
 	}
 }
 
+func TestNetHTTPMiddlewareSetsClientIPHeader(t *testing.T) {
+	server, err := testserver.StartMockServer(middlewareSecretKey, middlewareProjectKey)
+	if err != nil {
+		t.Fatalf("start mock server: %v", err)
+	}
+	defer server.Stop()
+
+	monitor, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Endpoint:   server.Endpoint(),
+	})
+	if err != nil {
+		t.Fatalf("init monitor: %v", err)
+	}
+	defer shutdownMonitorHelper(t, monitor)
+
+	handler := aiko.NetHTTPMiddleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	req.RemoteAddr = "203.0.113.99:52345"
+	req.Header.Set("CF-Connecting-IP", "198.51.100.25")
+	req.Header.Set("X-Forwarded-For", "198.51.100.1, 198.51.100.2")
+	req.Header.Set("Forwarded", "for=203.0.113.200")
+
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	if _, err := server.WaitForEvent(3 * time.Second); err != nil {
+		t.Fatalf("wait for event: %v", err)
+	}
+
+	headers := server.LastRequestHeaders()
+	if got := headers.Get("X-Client-IP"); got != "198.51.100.25" {
+		t.Fatalf("expected X-Client-IP header 198.51.100.25, got %q", got)
+	}
+}
+
 func TestNetHTTPMiddlewareSynthesizesErrorBody(t *testing.T) {
 	server, err := testserver.StartMockServer(middlewareSecretKey, middlewareProjectKey)
 	if err != nil {
@@ -300,6 +340,35 @@ func TestFastHTTPMiddlewareRecordsRequests(t *testing.T) {
 	}
 	if body, ok := event.RequestBody.(map[string]any); !ok || body["id"].(float64) != 123 {
 		t.Fatalf("expected parsed request body, got %#v", event.RequestBody)
+	}
+}
+
+func TestFastHTTPMiddlewareSetsClientIPHeader(t *testing.T) {
+	server, err := testserver.StartMockServer(fastHTTPSecretKey, fastHTTPProjectKey)
+	if err != nil {
+		t.Fatalf("start mock server: %v", err)
+	}
+	defer server.Stop()
+
+	monitor := newFastHTTPMonitor(t, server.Endpoint())
+	defer shutdownFastHTTPMonitor(t, monitor)
+
+	handler := aiko.FastHTTPMiddleware(monitor, func(ctx *fasthttp.RequestCtx) {
+		ctx.SetStatusCode(fasthttp.StatusOK)
+	})
+
+	ctx := prepareRequestCtx(fasthttp.MethodGet, "/", nil)
+	ctx.Request.Header.Set("X-Forwarded-For", "198.51.100.50, 203.0.113.8")
+
+	handler(ctx)
+
+	if _, err := server.WaitForEvent(3 * time.Second); err != nil {
+		t.Fatalf("wait for event: %v", err)
+	}
+
+	headers := server.LastRequestHeaders()
+	if got := headers.Get("X-Client-IP"); got != "198.51.100.50" {
+		t.Fatalf("expected X-Client-IP header 198.51.100.50, got %q", got)
 	}
 }
 

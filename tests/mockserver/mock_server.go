@@ -29,6 +29,7 @@ type MockServer struct {
 	events    []aiko.Event
 	attempts  []int
 	responses []int
+	requests  []http.Header
 
 	eventCh chan aiko.Event
 }
@@ -94,12 +95,14 @@ func (m *MockServer) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.mu.Lock()
+	clone := cloneHeader(r.Header)
 	status := http.StatusOK
 	if len(m.responses) > 0 {
 		status = m.responses[0]
 		m.responses = m.responses[1:]
 	}
 	m.attempts = append(m.attempts, status)
+	m.requests = append(m.requests, clone)
 	if status >= 200 && status < 300 {
 		m.events = append(m.events, event)
 		select {
@@ -166,6 +169,15 @@ func (m *MockServer) Attempts() []int {
 	return out
 }
 
+func (m *MockServer) LastRequestHeaders() http.Header {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.requests) == 0 {
+		return http.Header{}
+	}
+	return cloneHeader(m.requests[len(m.requests)-1])
+}
+
 func (m *MockServer) WaitForEvent(timeout time.Duration) (aiko.Event, error) {
 	select {
 	case evt := <-m.eventCh:
@@ -173,6 +185,14 @@ func (m *MockServer) WaitForEvent(timeout time.Duration) (aiko.Event, error) {
 	case <-time.After(timeout):
 		return aiko.Event{}, fmt.Errorf("timeout waiting for event")
 	}
+}
+
+func cloneHeader(h http.Header) http.Header {
+	copyHeader := make(http.Header, len(h))
+	for key, values := range h {
+		copyHeader[key] = append([]string(nil), values...)
+	}
+	return copyHeader
 }
 
 func (m *MockServer) Stop() {

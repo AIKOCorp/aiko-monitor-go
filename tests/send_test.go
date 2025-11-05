@@ -114,6 +114,11 @@ func TestSenderDeliversEventWithoutRedaction(t *testing.T) {
 	if cookie := received.ResponseHeaders["set-cookie"]; cookie != "id=1" {
 		t.Fatalf("expected set-cookie preserved, got %s", cookie)
 	}
+
+	headers := server.LastRequestHeaders()
+	if header := headers.Get("X-Client-IP"); header != "" {
+		t.Fatalf("expected no X-Client-IP header for manual add, got %q", header)
+	}
 }
 
 func TestSenderShutdownDrainsPendingEvents(t *testing.T) {
