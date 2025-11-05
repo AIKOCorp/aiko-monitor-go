@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -41,12 +42,21 @@ func (m *Monitor) AddEvent(evt Event) {
 	if m == nil || !m.enabled {
 		return
 	}
+
+	evt = normalizeEvent(evt)
 	select {
 	case m.events <- evt:
 	case <-m.closeCh:
 	default:
 		m.logger.Printf("aiko monitor queue is full; dropping event")
 	} // shouldn't drop
+}
+
+func normalizeEvent(evt Event) Event {
+	evt.Method = strings.ToUpper(evt.Method)
+	evt.RequestHeaders = CanonicalHeaderMap(evt.RequestHeaders)
+	evt.ResponseHeaders = CanonicalHeaderMap(evt.ResponseHeaders)
+	return evt
 }
 
 func (m *Monitor) Shutdown(ctx context.Context) error {
@@ -112,8 +122,7 @@ func (m *Monitor) jitter(base time.Duration) time.Duration {
 }
 
 func (m *Monitor) send(evt Event) {
-	sanitized := RedactEvent(evt)
-	payload, err := GzipEvent(sanitized)
+	payload, err := GzipEvent(evt)
 	if err != nil {
 		return
 	}

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -42,7 +41,7 @@ func shutdownMonitor(t *testing.T, monitor *aiko.Monitor) {
 	}
 }
 
-func TestSenderDeliversRedactedEvent(t *testing.T) {
+func TestSenderDeliversEventWithoutRedaction(t *testing.T) {
 	server, err := testserver.StartMockServer(testSecretKey, testProjectKey)
 	if err != nil {
 		t.Fatalf("start mock server: %v", err)
@@ -92,8 +91,8 @@ func TestSenderDeliversRedactedEvent(t *testing.T) {
 	}
 
 	auth := received.RequestHeaders["authorization"]
-	if auth != "[REDACTED]" {
-		t.Fatalf("expected authorization redacted, got %s", auth)
+	if auth != "Bearer secret" {
+		t.Fatalf("expected authorization preserved, got %s", auth)
 	}
 
 	// still fails, idk why
@@ -103,17 +102,17 @@ func TestSenderDeliversRedactedEvent(t *testing.T) {
 	// }
 
 	profile := received.RequestBody.(map[string]any)["profile"].(map[string]any)
-	if email := profile["email"].(string); email != "[REDACTED]" {
-		t.Fatalf("expected email redacted, got %s", email)
+	if email := profile["email"].(string); email != "user@example.com" {
+		t.Fatalf("expected email preserved, got %s", email)
 	}
 
 	note := profile["note"].(string)
-	if !strings.Contains(note, "[REDACTED]") {
-		t.Fatalf("expected note to contain redaction, got %s", note)
+	if note != "ping 203.0.113.10" {
+		t.Fatalf("expected note preserved, got %s", note)
 	}
 
-	if cookie := received.ResponseHeaders["set-cookie"]; cookie != "[REDACTED]" {
-		t.Fatalf("expected set-cookie redacted, got %s", cookie)
+	if cookie := received.ResponseHeaders["set-cookie"]; cookie != "id=1" {
+		t.Fatalf("expected set-cookie preserved, got %s", cookie)
 	}
 }
 

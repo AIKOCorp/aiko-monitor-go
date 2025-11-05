@@ -18,7 +18,7 @@ const (
 
 var (
 	projectKeyPattern    = regexp.MustCompile(`^pk_[A-Za-z0-9_-]{22}$`)
-	localEndpointPattern = regexp.MustCompile(`^http://(?:localhost|127\.0\.0\.1|\[::1\]):\d+/api/monitor/ingest$`)
+	localEndpointPattern = regexp.MustCompile(`^http://(?:localhost|127\.0\.0\.1|\[::1\]):\d+/api/ingest$`)
 )
 
 type Config struct {
@@ -53,21 +53,7 @@ func ValidateConfig(projectKey, secretKey, endpoint string) error {
 		return errors.New("secretKey must be exactly 43 base64url characters")
 	}
 	if endpoint != defaultEndpoint && endpoint != stagingEndpoint && !localEndpointPattern.MatchString(endpoint) {
-		return errors.New("endpoint must match http://localhost:PORT/api/monitor/ingest or be 'https://monitor.aikocorp.ai/api/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'")
+		return errors.New("endpoint must match http://localhost:PORT/api/ingest or be 'https://monitor.aikocorp.ai/api/ingest' or 'https://staging.aikocorp.ai/api/monitor/ingest'")
 	}
 	return nil
-}
-
-func RedactEvent(evt Event) Event {
-	return Event{
-		URL:             evt.URL,
-		Endpoint:        evt.Endpoint,
-		Method:          evt.Method,
-		StatusCode:      evt.StatusCode,
-		RequestHeaders:  redactHeaders(evt.RequestHeaders),
-		RequestBody:     RedactValue(evt.RequestBody),
-		ResponseHeaders: redactHeaders(evt.ResponseHeaders),
-		ResponseBody:    RedactValue(evt.ResponseBody),
-		DurationMS:      evt.DurationMS,
-	}
 }

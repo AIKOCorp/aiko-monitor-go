@@ -295,8 +295,8 @@ func TestFastHTTPMiddlewareRecordsRequests(t *testing.T) {
 	if event.RequestHeaders["x-aiko-version"] == "" {
 		t.Fatalf("expected version header, got %#v", event.RequestHeaders)
 	}
-	if cookie := event.ResponseHeaders["set-cookie"]; cookie != "[REDACTED]" {
-		t.Fatalf("expected redacted set-cookie header, got %q", cookie)
+	if cookie := event.ResponseHeaders["set-cookie"]; cookie != "a=1, b=2" {
+		t.Fatalf("expected combined set-cookie header, got %q", cookie)
 	}
 	if body, ok := event.RequestBody.(map[string]any); !ok || body["id"].(float64) != 123 {
 		t.Fatalf("expected parsed request body, got %#v", event.RequestBody)

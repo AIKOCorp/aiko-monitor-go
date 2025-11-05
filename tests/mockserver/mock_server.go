@@ -64,7 +64,7 @@ func (m *MockServer) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if r.URL.Path != "/api/monitor/ingest" {
+	if r.URL.Path != "/api/ingest" {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -141,7 +141,7 @@ func sign(secret, body []byte) []byte {
 }
 
 func (m *MockServer) Endpoint() string {
-	return m.srv.URL + "/api/monitor/ingest"
+	return m.srv.URL + "/api/ingest"
 }
 
 func (m *MockServer) SetResponses(statuses []int) {

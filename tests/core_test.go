@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	aiko "github.com/aikocorp/aiko-monitor-go/aiko"
@@ -25,37 +24,6 @@ func TestCanonicalHeadersFlattensAndLowercases(t *testing.T) {
 	}
 	if canon["set-cookie"] != "a=1, b=2" {
 		t.Fatalf("expected joined set-cookie, got %q", canon["set-cookie"])
-	}
-}
-
-func TestRedactStringMasksIPAddresses(t *testing.T) {
-	input := "contact user@example.com at 2001:0DB8:85A3:0000:0000:8A2E:0370:7334 or 203.0.113.10"
-	output := aiko.RedactString(input)
-	if output == input {
-		t.Fatal("expected redaction to modify string")
-	}
-	if !strings.Contains(output, "[REDACTED]") {
-		t.Fatalf("expected redaction mask in output: %q", output)
-	}
-	lower := strings.ToLower(output)
-	if strings.Contains(lower, "2001:0db8") || strings.Contains(lower, "203.0.113.10") {
-		t.Fatalf("expected IP addresses to be masked: %q", output)
-	}
-}
-
-func TestRedactArrayElements(t *testing.T) {
-	value := []any{"user@example.com", "no pii"}
-	redacted := aiko.RedactValue(value)
-
-	arr, ok := redacted.([]any)
-	if !ok {
-		t.Fatalf("expected []any, got %T", redacted)
-	}
-	if arr[0] != "[REDACTED]" {
-		t.Fatalf("expected first element redacted, got %v", arr[0])
-	}
-	if arr[1] != "no pii" {
-		t.Fatalf("expected safe element unchanged, got %v", arr[1])
 	}
 }
 
