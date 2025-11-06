@@ -22,18 +22,13 @@ type Monitor struct {
 	secret  []byte
 	client  *http.Client
 	logger  *log.Logger
-	events  chan queuedEvent
+	events  chan Event
 	sem     chan struct{}
 	wg      sync.WaitGroup
 	once    sync.Once
 	closeCh chan struct{}
 	enabled bool
 	rnd     *rand.Rand
-}
-
-type queuedEvent struct {
-	event    Event
-	clientIP string
 }
 
 const (
@@ -50,12 +45,12 @@ func (m *Monitor) AddEvent(evt Event) {
 	}
 
 	evt = normalizeEvent(evt)
-	m.addEvent(evt, "")
+	m.addEvent(evt)
 }
 
-func (m *Monitor) addEvent(evt Event, clientIP string) {
+func (m *Monitor) addEvent(evt Event) {
 	select {
-	case m.events <- queuedEvent{event: evt, clientIP: clientIP}:
+	case m.events <- evt:
 	case <-m.closeCh:
 	default:
 		m.logger.Printf("aiko monitor queue is full; dropping event")
@@ -112,14 +107,14 @@ func (m *Monitor) Enabled() bool {
 
 func (m *Monitor) run() {
 	defer m.wg.Done()
-	for qe := range m.events {
+	for evt := range m.events {
 		m.sem <- struct{}{}
 		m.wg.Add(1)
-		go func(e queuedEvent) {
+		go func(e Event) {
 			defer m.wg.Done()
 			defer func() { <-m.sem }()
 			m.send(e)
-		}(qe)
+		}(evt)
 	}
 }
 
@@ -131,8 +126,14 @@ func (m *Monitor) jitter(base time.Duration) time.Duration {
 	return time.Duration(float64(base) * factor)
 }
 
-func (m *Monitor) send(qe queuedEvent) {
-	payload, err := GzipEvent(qe.event)
+func (m *Monitor) send(evt Event) {
+	peerIP := evt.RequestHeaders["x-aiko-peer-ip"]
+	if peerIP != "" {
+		delete(evt.RequestHeaders, "x-aiko-peer-ip")
+	}
+	clientIP := extractClientIP(evt.RequestHeaders, peerIP)
+	sanitized := RedactEvent(evt)
+	payload, err := GzipEvent(sanitized)
 	if err != nil {
 		return
 	}
@@ -152,8 +153,8 @@ func (m *Monitor) send(qe queuedEvent) {
 		req.Header.Set("Content-Encoding", "gzip")
 		req.Header.Set("X-Project-Key", m.cfg.ProjectKey)
 		req.Header.Set("X-Signature", signature)
-		if qe.clientIP != "" {
-			req.Header.Set("X-Client-IP", qe.clientIP)
+		if clientIP != "" {
+			req.Header.Set("X-Client-IP", clientIP)
 		}
 
 		resp, err := m.client.Do(req)
@@ -241,7 +242,7 @@ func newMonitor(cfg Config, secret []byte, client *http.Client, logger *log.Logg
 		secret:  secret,
 		client:  client,
 		logger:  logger,
-		events:  make(chan queuedEvent, cfg.QueueSize),
+		events:  make(chan Event, cfg.QueueSize),
 		sem:     make(chan struct{}, cfg.MaxConcurrentSends),
 		closeCh: make(chan struct{}),
 		enabled: true,

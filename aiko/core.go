@@ -29,6 +29,16 @@ var priorityClientIPHeaders = []string{
 	"fastly-client-ip",
 }
 
+const redactionMask = "[REDACTED]"
+
+var sensitiveKeys = map[string]struct{}{
+	"password":      {},
+	"secret":        {},
+	"token":         {},
+	"authorization": {},
+	"api_key":       {},
+}
+
 func CanonicalHeaders(h http.Header) map[string]string {
 	if h == nil {
 		return map[string]string{}
@@ -120,31 +130,62 @@ func DecodeResponseBody(raw []byte, headers map[string]string) any {
 	return map[string]string{"base64": base64.StdEncoding.EncodeToString(decoded)}
 }
 
-func Sign(secret, body []byte) string {
-	mac := hmac.New(sha256.New, secret)
-	mac.Write(body)
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
-func GzipEvent(evt Event) ([]byte, error) {
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	enc := json.NewEncoder(gz)
-	if err := enc.Encode(evt); err != nil {
-		if closeErr := gz.Close(); closeErr != nil {
-			return nil, errors.Join(err, closeErr)
+func RedactValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, val := range v {
+			if _, ok := sensitiveKeys[strings.ToLower(key)]; ok {
+				out[key] = redactionMask
+				continue
+			}
+			out[key] = RedactValue(val)
 		}
-		return nil, err
+		return out
+	case map[string]string:
+		out := make(map[string]any, len(v))
+		for key, val := range v {
+			if _, ok := sensitiveKeys[strings.ToLower(key)]; ok {
+				out[key] = redactionMask
+				continue
+			}
+			out[key] = val
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = RedactValue(item)
+		}
+		return out
+	case []string:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = item
+		}
+		return out
+	case []byte:
+		encoded := base64.StdEncoding.EncodeToString(v)
+		return map[string]string{"base64": encoded}
+	default:
+		return value
 	}
-	if err := gz.Close(); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }
 
-func VersionHeaderValue() string {
-	// figure out a way to set the version automatically from git tag
-	return fmt.Sprintf("go:%s", "0.0.3")
+func redactHeaders(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		lower := strings.ToLower(k)
+		if _, ok := sensitiveKeys[lower]; ok {
+			out[lower] = redactionMask
+			continue
+		}
+		out[lower] = v
+	}
+	return out
 }
 
 func decodeWithEncoding(raw []byte, encoding string) []byte {
@@ -192,6 +233,32 @@ func tryParseJSON(raw []byte) (any, bool) {
 		return out, true
 	}
 	return nil, false
+}
+
+func Sign(secret, body []byte) string {
+	mac := hmac.New(sha256.New, secret)
+	mac.Write(body)
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func GzipEvent(evt Event) ([]byte, error) {
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	enc := json.NewEncoder(gz)
+	if err := enc.Encode(evt); err != nil {
+		if closeErr := gz.Close(); closeErr != nil {
+			return nil, errors.Join(err, closeErr)
+		}
+		return nil, err
+	}
+	if err := gz.Close(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func VersionHeaderValue() string {
+	return fmt.Sprintf("go:%s", "0.0.3")
 }
 
 func extractClientIP(headers map[string]string, peerIP string) string {
@@ -276,7 +343,7 @@ func peerIPFromRemoteAddr(addr string) string {
 	}
 	host, _, err := net.SplitHostPort(addr)
 	if err == nil {
-		return host
+		return normalizeIP(host)
 	}
-	return addr
+	return normalizeIP(addr)
 }

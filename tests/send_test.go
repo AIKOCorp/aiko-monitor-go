@@ -41,7 +41,7 @@ func shutdownMonitor(t *testing.T, monitor *aiko.Monitor) {
 	}
 }
 
-func TestSenderDeliversEventWithoutRedaction(t *testing.T) {
+func TestSenderDeliversEventWithRedaction(t *testing.T) {
 	server, err := testserver.StartMockServer(testSecretKey, testProjectKey)
 	if err != nil {
 		t.Fatalf("start mock server: %v", err)
@@ -91,8 +91,8 @@ func TestSenderDeliversEventWithoutRedaction(t *testing.T) {
 	}
 
 	auth := received.RequestHeaders["authorization"]
-	if auth != "Bearer secret" {
-		t.Fatalf("expected authorization preserved, got %s", auth)
+	if auth != "[REDACTED]" {
+		t.Fatalf("expected authorization redacted, got %s", auth)
 	}
 
 	// still fails, idk why
@@ -116,8 +116,8 @@ func TestSenderDeliversEventWithoutRedaction(t *testing.T) {
 	}
 
 	headers := server.LastRequestHeaders()
-	if header := headers.Get("X-Client-IP"); header != "" {
-		t.Fatalf("expected no X-Client-IP header for manual add, got %q", header)
+	if header := headers.Get("X-Client-IP"); header != "2001:0DB8:85A3:0000:0000:8A2E:0370:7334" {
+		t.Fatalf("expected X-Client-IP header set from request headers, got %q", header)
 	}
 }
 

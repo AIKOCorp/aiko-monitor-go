@@ -57,3 +57,17 @@ func ValidateConfig(projectKey, secretKey, endpoint string) error {
 	}
 	return nil
 }
+
+func RedactEvent(evt Event) Event {
+	return Event{
+		URL:             evt.URL,
+		Endpoint:        evt.Endpoint,
+		Method:          evt.Method,
+		StatusCode:      evt.StatusCode,
+		RequestHeaders:  redactHeaders(evt.RequestHeaders),
+		RequestBody:     RedactValue(evt.RequestBody),
+		ResponseHeaders: redactHeaders(evt.ResponseHeaders),
+		ResponseBody:    RedactValue(evt.ResponseBody),
+		DurationMS:      evt.DurationMS,
+	}
+}

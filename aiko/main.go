@@ -45,7 +45,9 @@ func NetHTTPMiddleware(monitor *Monitor) func(http.Handler) http.Handler {
 			reqHeaders := CanonicalHeaders(r.Header)
 			reqHeaders["x-aiko-version"] = VersionHeaderValue()
 			peerIP := peerIPFromRemoteAddr(r.RemoteAddr)
-			clientIP := extractClientIP(reqHeaders, peerIP)
+			if validIP(peerIP) {
+				reqHeaders["x-aiko-peer-ip"] = normalizeIP(peerIP)
+			}
 			requestBody := ParseJSONBody(reqBodyBuf)
 
 			capture := NewResponseCapture(w)
@@ -94,7 +96,7 @@ func NetHTTPMiddleware(monitor *Monitor) func(http.Handler) http.Handler {
 				DurationMS:      duration.Milliseconds(),
 			}
 
-			monitor.addEvent(evt, clientIP)
+			monitor.addEvent(evt)
 
 			if recovered != nil {
 				panic(recovered)
@@ -114,7 +116,9 @@ func FastHTTPMiddleware(monitor *Monitor, next fasthttp.RequestHandler) fasthttp
 		reqHeaders := CanonicalFastHTTPHeaders(ctx.Request.Header.All())
 		reqHeaders["x-aiko-version"] = VersionHeaderValue()
 		peerIP := ctx.RemoteIP().String()
-		clientIP := extractClientIP(reqHeaders, peerIP)
+		if validIP(peerIP) {
+			reqHeaders["x-aiko-peer-ip"] = normalizeIP(peerIP)
+		}
 
 		reqBody := append([]byte(nil), ctx.PostBody()...)
 		requestBody := ParseJSONBody(reqBody)
@@ -164,7 +168,7 @@ func FastHTTPMiddleware(monitor *Monitor, next fasthttp.RequestHandler) fasthttp
 			DurationMS:      time.Since(start).Milliseconds(),
 		}
 
-		monitor.addEvent(evt, clientIP)
+		monitor.addEvent(evt)
 
 		if recovered != nil {
 			panic(recovered)
