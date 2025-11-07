@@ -258,7 +258,7 @@ func GzipEvent(evt Event) ([]byte, error) {
 }
 
 func VersionHeaderValue() string {
-	return fmt.Sprintf("go:%s", "0.0.3")
+	return fmt.Sprintf("go:%s", "0.0.5")
 }
 
 func extractClientIP(headers map[string]string, peerIP string) string {
