@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -16,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -86,7 +88,7 @@ func CanonicalHeaderMap(headers map[string]string) map[string]string {
 
 func ParseJSONBody(raw []byte) any {
 	if len(raw) == 0 {
-		return map[string]any{}
+		return nil
 	}
 	var out any
 	if err := json.Unmarshal(raw, &out); err == nil {
@@ -97,7 +99,7 @@ func ParseJSONBody(raw []byte) any {
 
 func DecodeResponseBody(raw []byte, headers map[string]string) any {
 	if len(raw) == 0 {
-		return map[string]any{}
+		return nil
 	}
 
 	decoded := decodeWithEncoding(raw, strings.ToLower(headers["content-encoding"]))
@@ -258,7 +260,15 @@ func GzipEvent(evt Event) ([]byte, error) {
 }
 
 func VersionHeaderValue() string {
-	return fmt.Sprintf("go:%s", "0.0.5")
+	return fmt.Sprintf("go:%s", "0.0.6")
+}
+
+func newEventID() string {
+	var raw [16]byte
+	if _, err := io.ReadFull(rand.Reader, raw[:]); err == nil {
+		return "evt_" + hex.EncodeToString(raw[:])
+	}
+	return fmt.Sprintf("evt_%d", time.Now().UTC().UnixNano())
 }
 
 func extractClientIP(headers map[string]string, peerIP string) string {

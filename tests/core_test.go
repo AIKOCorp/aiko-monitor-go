@@ -80,8 +80,8 @@ func TestDecodeResponseBodyHandlesInvalidJSON(t *testing.T) {
 }
 
 func TestParseJSONBodyVariants(t *testing.T) {
-	if out := aiko.ParseJSONBody(nil); out == nil {
-		t.Fatal("expected empty input to return map, got nil")
+	if out := aiko.ParseJSONBody(nil); out != nil {
+		t.Fatalf("expected empty input to return nil, got %#v", out)
 	}
 
 	obj := aiko.ParseJSONBody([]byte(`{"a":1}`))
@@ -148,6 +148,15 @@ func TestDecodeResponseBodyDecodesCompressedPayloads(t *testing.T) {
 		if !ok || m["base64"] == "" {
 			t.Fatalf("case %d: expected base64 map, got %#v", i, out)
 		}
+	}
+}
+
+func TestDecodeResponseBodyEmptyPayload(t *testing.T) {
+	if out := aiko.DecodeResponseBody(nil, map[string]string{}); out != nil {
+		t.Fatalf("expected nil for nil payload, got %#v", out)
+	}
+	if out := aiko.DecodeResponseBody([]byte{}, map[string]string{"content-type": "application/json"}); out != nil {
+		t.Fatalf("expected nil for empty payload, got %#v", out)
 	}
 }
 

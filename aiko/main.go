@@ -89,6 +89,7 @@ func NetHTTPMiddleware(monitor *Monitor) func(http.Handler) http.Handler {
 				Endpoint:        requestURI,
 				Method:          strings.ToUpper(r.Method),
 				StatusCode:      statusCode,
+				Actor:           monitor.actorFromHTTPRequest(r),
 				RequestHeaders:  reqHeaders,
 				RequestBody:     requestBody,
 				ResponseHeaders: resHeaders,
@@ -96,6 +97,15 @@ func NetHTTPMiddleware(monitor *Monitor) func(http.Handler) http.Handler {
 				DurationMS:      duration.Milliseconds(),
 			}
 
+			evt = normalizeEvent(evt)
+			monitor.verbosef(
+				"captured event_id=%s method=%s endpoint=%s status=%d duration_ms=%d",
+				evt.ID,
+				evt.Method,
+				evt.Endpoint,
+				evt.StatusCode,
+				evt.DurationMS,
+			)
 			monitor.addEvent(evt)
 
 			if recovered != nil {
@@ -161,6 +171,7 @@ func FastHTTPMiddleware(monitor *Monitor, next fasthttp.RequestHandler) fasthttp
 			Endpoint:        url,
 			Method:          strings.ToUpper(string(ctx.Method())),
 			StatusCode:      status,
+			Actor:           monitor.actorFromFastHTTP(ctx),
 			RequestHeaders:  reqHeaders,
 			RequestBody:     requestBody,
 			ResponseHeaders: resHeaders,
@@ -168,6 +179,15 @@ func FastHTTPMiddleware(monitor *Monitor, next fasthttp.RequestHandler) fasthttp
 			DurationMS:      time.Since(start).Milliseconds(),
 		}
 
+		evt = normalizeEvent(evt)
+		monitor.verbosef(
+			"captured event_id=%s method=%s endpoint=%s status=%d duration_ms=%d",
+			evt.ID,
+			evt.Method,
+			evt.Endpoint,
+			evt.StatusCode,
+			evt.DurationMS,
+		)
 		monitor.addEvent(evt)
 
 		if recovered != nil {

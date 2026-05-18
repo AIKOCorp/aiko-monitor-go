@@ -102,6 +102,7 @@ func (m *MockServer) handle(w http.ResponseWriter, r *http.Request) {
 		m.responses = m.responses[1:]
 	}
 	m.attempts = append(m.attempts, status)
+	requestID := fmt.Sprintf("req_%d", len(m.attempts))
 	m.requests = append(m.requests, clone)
 	if status >= 200 && status < 300 {
 		m.events = append(m.events, event)
@@ -112,6 +113,7 @@ func (m *MockServer) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	m.mu.Unlock()
 
+	w.Header().Set("X-Request-Id", requestID)
 	w.WriteHeader(status)
 }
 

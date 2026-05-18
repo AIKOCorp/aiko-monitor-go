@@ -3,6 +3,8 @@ package aiko_test
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -124,6 +126,114 @@ func TestNetHTTPMiddlewareRecordsRequests(t *testing.T) {
 	}
 }
 
+func TestNetHTTPMiddlewareExtractsJWTActor(t *testing.T) {
+	server, err := testserver.StartMockServer(middlewareSecretKey, middlewareProjectKey)
+	if err != nil {
+		t.Fatalf("start mock server: %v", err)
+	}
+	defer server.Stop()
+
+	monitor, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Endpoint:   server.Endpoint(),
+		Actor: aiko.ActorConfig{
+			Provider:   aiko.ActorProviderJWT,
+			IDClaim:    "id",
+			EmailClaim: "sub",
+		},
+	})
+	if err != nil {
+		t.Fatalf("init monitor: %v", err)
+	}
+	defer shutdownMonitorHelper(t, monitor)
+
+	handler := aiko.NetHTTPMiddleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	token := testJWT(t, map[string]any{
+		"exp": 1781326327,
+		"id":  "8e9ccf29-7838-46e3-bafc-b0a91f14b20a",
+		"sub": "pixqc1159@gmail.com",
+	})
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/private", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	event, err := server.WaitForEvent(3 * time.Second)
+	if err != nil {
+		t.Fatalf("wait for event: %v", err)
+	}
+	if event.Actor == nil {
+		t.Fatal("expected actor context")
+	}
+	if event.Actor.Provider != aiko.ActorProviderJWT {
+		t.Fatalf("expected actor provider jwt, got %q", event.Actor.Provider)
+	}
+	if event.Actor.ID != "8e9ccf29-7838-46e3-bafc-b0a91f14b20a" {
+		t.Fatalf("expected actor id, got %q", event.Actor.ID)
+	}
+	if event.Actor.Email != "pixqc1159@gmail.com" {
+		t.Fatalf("expected actor email, got %q", event.Actor.Email)
+	}
+	eventJSON, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	if strings.Contains(string(eventJSON), token) {
+		t.Fatal("expected raw token to be omitted from event payload")
+	}
+	for _, field := range []string{"session_id", "org_id", "roles", "source"} {
+		if strings.Contains(string(eventJSON), field) {
+			t.Fatalf("expected deferred actor field %q to be omitted", field)
+		}
+	}
+}
+
+func TestNetHTTPMiddlewareOmitsActorWhenConfiguredClaimsDoNotResolve(t *testing.T) {
+	server, err := testserver.StartMockServer(middlewareSecretKey, middlewareProjectKey)
+	if err != nil {
+		t.Fatalf("start mock server: %v", err)
+	}
+	defer server.Stop()
+
+	monitor, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Endpoint:   server.Endpoint(),
+		Actor: aiko.ActorConfig{
+			Provider:   aiko.ActorProviderJWT,
+			IDClaim:    "actor.id",
+			EmailClaim: "actor.email",
+		},
+	})
+	if err != nil {
+		t.Fatalf("init monitor: %v", err)
+	}
+	defer shutdownMonitorHelper(t, monitor)
+
+	handler := aiko.NetHTTPMiddleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/private", nil)
+	req.Header.Set("Authorization", "Bearer "+testJWT(t, map[string]any{"sub": "user_1"}))
+
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	event, err := server.WaitForEvent(3 * time.Second)
+	if err != nil {
+		t.Fatalf("wait for event: %v", err)
+	}
+	if event.Actor != nil {
+		t.Fatalf("expected actor to be omitted, got %#v", event.Actor)
+	}
+}
+
 func TestNetHTTPMiddlewareSetsClientIPHeader(t *testing.T) {
 	server, err := testserver.StartMockServer(middlewareSecretKey, middlewareProjectKey)
 	if err != nil {
@@ -162,6 +272,22 @@ func TestNetHTTPMiddlewareSetsClientIPHeader(t *testing.T) {
 	if got := headers.Get("X-Client-IP"); got != "198.51.100.25" {
 		t.Fatalf("expected X-Client-IP header 198.51.100.25, got %q", got)
 	}
+}
+
+func testJWT(t *testing.T, claims map[string]any) string {
+	t.Helper()
+	header, err := json.Marshal(map[string]any{"alg": "HS256", "typ": "JWT"})
+	if err != nil {
+		t.Fatalf("marshal jwt header: %v", err)
+	}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatalf("marshal jwt claims: %v", err)
+	}
+	signature := base64.RawURLEncoding.EncodeToString([]byte("signature"))
+	return base64.RawURLEncoding.EncodeToString(header) + "." +
+		base64.RawURLEncoding.EncodeToString(payload) + "." +
+		signature
 }
 
 func TestNetHTTPMiddlewareSynthesizesErrorBody(t *testing.T) {
@@ -343,6 +469,62 @@ func TestFastHTTPMiddlewareRecordsRequests(t *testing.T) {
 	}
 }
 
+func TestFastHTTPMiddlewareExtractsJWTActor(t *testing.T) {
+	server, err := testserver.StartMockServer(fastHTTPSecretKey, fastHTTPProjectKey)
+	if err != nil {
+		t.Fatalf("start mock server: %v", err)
+	}
+	defer server.Stop()
+
+	monitor, err := aiko.New(aiko.Config{
+		ProjectKey: fastHTTPProjectKey,
+		SecretKey:  fastHTTPSecretKey,
+		Endpoint:   server.Endpoint(),
+		Actor: aiko.ActorConfig{
+			Provider:   aiko.ActorProviderJWT,
+			IDClaim:    "actor.id",
+			EmailClaim: "actor.email",
+		},
+	})
+	if err != nil {
+		t.Fatalf("init monitor: %v", err)
+	}
+	defer shutdownFastHTTPMonitor(t, monitor)
+
+	handler := aiko.FastHTTPMiddleware(monitor, func(ctx *fasthttp.RequestCtx) {
+		ctx.SetStatusCode(fasthttp.StatusNoContent)
+	})
+
+	token := testJWT(t, map[string]any{
+		"exp": 1781326327,
+		"actor": map[string]any{
+			"id":    "8e9ccf29-7838-46e3-bafc-b0a91f14b20a",
+			"email": "pixqc1159@gmail.com",
+		},
+	})
+	ctx := prepareRequestCtx(fasthttp.MethodGet, "/private", nil)
+	ctx.Request.Header.Set("Authorization", "Bearer "+token)
+
+	handler(ctx)
+
+	event, err := server.WaitForEvent(3 * time.Second)
+	if err != nil {
+		t.Fatalf("wait for event: %v", err)
+	}
+	if event.Actor == nil {
+		t.Fatal("expected actor context")
+	}
+	if event.Actor.Provider != aiko.ActorProviderJWT {
+		t.Fatalf("expected actor provider jwt, got %q", event.Actor.Provider)
+	}
+	if event.Actor.ID != "8e9ccf29-7838-46e3-bafc-b0a91f14b20a" {
+		t.Fatalf("expected actor id, got %q", event.Actor.ID)
+	}
+	if event.Actor.Email != "pixqc1159@gmail.com" {
+		t.Fatalf("expected actor email, got %q", event.Actor.Email)
+	}
+}
+
 func TestFastHTTPMiddlewareSetsClientIPHeader(t *testing.T) {
 	server, err := testserver.StartMockServer(fastHTTPSecretKey, fastHTTPProjectKey)
 	if err != nil {
@@ -515,6 +697,59 @@ func TestNewRejectsInvalidSecretEncoding(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "decode secret key") {
 		t.Fatalf("expected decode error, got %v", err)
+	}
+}
+
+func TestNewRejectsActorClaimPathsWithoutProvider(t *testing.T) {
+	_, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Actor: aiko.ActorConfig{
+			IDClaim: "id",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected actor provider config error")
+	}
+	expected := "actor.provider is required when actor claim paths are configured"
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}
+
+func TestNewRejectsActorProviderWithoutClaimPath(t *testing.T) {
+	_, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Actor: aiko.ActorConfig{
+			Provider: aiko.ActorProviderJWT,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected actor claim config error")
+	}
+	expected := "actor requires at least one of id claim or email claim"
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}
+
+func TestNewRejectsUnsupportedActorProvider(t *testing.T) {
+	_, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Actor: aiko.ActorConfig{
+			Provider:   aiko.ActorProvider("clerk"),
+			IDClaim:    "id",
+			EmailClaim: "email",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected actor provider config error")
+	}
+	expected := "actor.provider must be jwt"
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
 	}
 }
 

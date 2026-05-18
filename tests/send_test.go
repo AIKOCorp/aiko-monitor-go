@@ -1,11 +1,15 @@
 package aiko_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -83,6 +87,12 @@ func TestSenderDeliversEventWithRedaction(t *testing.T) {
 	if received.Method != "POST" {
 		t.Fatalf("expected POST method, got %s", received.Method)
 	}
+	if received.ID == "" {
+		t.Fatal("expected generated event id")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, received.Timestamp); err != nil {
+		t.Fatalf("expected RFC3339 timestamp, got %q: %v", received.Timestamp, err)
+	}
 	if received.Endpoint != "/test?foo=1" {
 		t.Fatalf("expected endpoint path, got %s", received.Endpoint)
 	}
@@ -138,9 +148,9 @@ func TestSenderShutdownDrainsPendingEvents(t *testing.T) {
 			Method:          "GET",
 			StatusCode:      202,
 			RequestHeaders:  map[string]string{},
-			RequestBody:     map[string]any{},
+			RequestBody:     nil,
 			ResponseHeaders: map[string]string{},
-			ResponseBody:    map[string]any{},
+			ResponseBody:    nil,
 			DurationMS:      5,
 		})
 	}
@@ -172,9 +182,9 @@ func TestSenderRetriesOnServerError(t *testing.T) {
 		Method:          "POST",
 		StatusCode:      500,
 		RequestHeaders:  map[string]string{},
-		RequestBody:     map[string]any{},
+		RequestBody:     nil,
 		ResponseHeaders: map[string]string{},
-		ResponseBody:    map[string]any{},
+		ResponseBody:    nil,
 		DurationMS:      25,
 	})
 
@@ -191,6 +201,110 @@ func TestSenderRetriesOnServerError(t *testing.T) {
 	}
 	if attempts[1] != http.StatusOK {
 		t.Fatalf("expected second attempt 200, got %d", attempts[1])
+	}
+}
+
+func TestVerboseNormalIngestLogsSDKFlow(t *testing.T) {
+	server, err := testserver.StartMockServer(testSecretKey, testProjectKey)
+	if err != nil {
+		t.Fatalf("start mock server: %v", err)
+	}
+	defer server.Stop()
+
+	var logs bytes.Buffer
+	monitor, err := aiko.New(aiko.Config{
+		ProjectKey: testProjectKey,
+		SecretKey:  testSecretKey,
+		Endpoint:   server.Endpoint(),
+		Verbose:    true,
+		Logger:     log.New(&logs, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("init monitor: %v", err)
+	}
+
+	if events := server.Events(); len(events) != 0 {
+		t.Fatalf("expected no event before normal traffic, got %d", len(events))
+	}
+
+	monitor.AddEvent(aiko.Event{
+		URL:             "/verbose",
+		Endpoint:        "/verbose",
+		Method:          "GET",
+		StatusCode:      200,
+		RequestHeaders:  map[string]string{},
+		RequestBody:     nil,
+		ResponseHeaders: map[string]string{},
+		ResponseBody:    nil,
+		DurationMS:      1,
+	})
+
+	if _, err := server.WaitForEvent(3 * time.Second); err != nil {
+		t.Fatalf("wait for event: %v", err)
+	}
+	shutdownMonitor(t, monitor)
+
+	output := logs.String()
+	for _, expected := range []string{
+		"verbose init",
+		"verbose queued event_id=",
+		"verbose send attempt",
+		"verbose send accepted",
+		"verbose install verified: monitor accepted first event",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected logs to contain %q, got:\n%s", expected, output)
+		}
+	}
+	if strings.Contains(output, "probe") {
+		t.Fatalf("verbose mode should not send or log probes, got:\n%s", output)
+	}
+	if strings.Contains(output, testSecretKey) {
+		t.Fatal("verbose logs must not include secret key")
+	}
+}
+
+func TestVerboseNetHTTPMiddlewareLogsCapturedEvent(t *testing.T) {
+	server, err := testserver.StartMockServer(testSecretKey, testProjectKey)
+	if err != nil {
+		t.Fatalf("start mock server: %v", err)
+	}
+	defer server.Stop()
+
+	var logs bytes.Buffer
+	monitor, err := aiko.New(aiko.Config{
+		ProjectKey: testProjectKey,
+		SecretKey:  testSecretKey,
+		Endpoint:   server.Endpoint(),
+		Verbose:    true,
+		Logger:     log.New(&logs, "", 0),
+	})
+	if err != nil {
+		t.Fatalf("init monitor: %v", err)
+	}
+
+	handler := aiko.NetHTTPMiddleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/verbose-capture", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if _, err := server.WaitForEvent(3 * time.Second); err != nil {
+		t.Fatalf("wait for event: %v", err)
+	}
+	shutdownMonitor(t, monitor)
+
+	output := logs.String()
+	for _, expected := range []string{
+		"verbose captured event_id=",
+		"method=GET",
+		"endpoint=/verbose-capture",
+		"status=202",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected logs to contain %q, got:\n%s", expected, output)
+		}
 	}
 }
 

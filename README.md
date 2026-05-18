@@ -37,6 +37,12 @@ func main() {
 	monitor, err := aiko.New(aiko.Config{
 		ProjectKey: projectKey,
 		SecretKey:  secretKey,
+		Verbose:    true,
+		Actor: aiko.ActorConfig{
+			Provider:   aiko.ActorProviderJWT,
+			IDClaim:    "id",
+			EmailClaim: "email",
+		},
 	})
 	if err != nil {
 		log.Fatalf("aiko init: %v", err)
@@ -93,6 +99,7 @@ func main() {
 	monitor, err := aiko.New(aiko.Config{
 		ProjectKey: projectKey,
 		SecretKey:  secretKey,
+		Verbose:    true,
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -111,6 +118,49 @@ func main() {
 	})
 
 	log.Fatal(fasthttp.ListenAndServe(":8080", handler))
+}
+```
+
+## Verbose install verification
+
+Pass `Verbose: true` in `aiko.Config` while installing the SDK. The SDK keeps ingest behavior unchanged and prints useful details for normal captured requests, including whether monitor accepts the first event.
+
+Example output:
+
+```text
+[aiko] verbose init sdk=go:0.0.6 endpoint=https://monitor.aikocorp.ai/api/ingest project_key=pk_AAA...AAAA queue_size=5000 max_concurrent_sends=5
+[aiko] verbose captured event_id=evt_... method=GET endpoint=/hello status=200 duration_ms=4
+[aiko] verbose queued event_id=evt_... queue_depth=1 queue_size=5000
+[aiko] verbose send attempt event_id=evt_... attempt=1 max_attempts=3 method=GET endpoint=/hello payload_bytes=382
+[aiko] verbose send accepted event_id=evt_... status=202 request_id=req_... latency_ms=91
+[aiko] verbose install verified: monitor accepted first event
+```
+
+## Actor extraction
+
+Actor extraction is opt-in. For self-signed JWTs in `Authorization: Bearer ...`, configure the JWT claim paths. The SDK decodes the JWT payload locally and sends only `actor.provider`, `actor.id`, and `actor.email` from the configured claim paths. It does not send the token. The only supported provider in this cut is `aiko.ActorProviderJWT`.
+
+```go
+monitor, err := aiko.New(aiko.Config{
+	ProjectKey: projectKey,
+	SecretKey:  secretKey,
+	Actor: aiko.ActorConfig{
+		Provider:   aiko.ActorProviderJWT,
+		IDClaim:    "sub",
+		EmailClaim: "email",
+	},
+})
+```
+
+For nested claims, use dot paths such as `user.id` or `claims.email`.
+
+Expected JWT payload shape:
+
+```json
+{
+  "exp": 1781326327,
+  "sub": "8e9ccf29-7838-46e3-bafc-b0a91f14b20a",
+  "email": "pixqc1159@gmail.com"
 }
 ```
 
