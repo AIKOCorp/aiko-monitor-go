@@ -121,8 +121,8 @@ func TestSenderDeliversEventWithRedaction(t *testing.T) {
 		t.Fatalf("expected note preserved, got %s", note)
 	}
 
-	if cookie := received.ResponseHeaders["set-cookie"]; cookie != "id=1" {
-		t.Fatalf("expected set-cookie preserved, got %s", cookie)
+	if cookie := received.ResponseHeaders["set-cookie"]; cookie != "[REDACTED]" {
+		t.Fatalf("expected set-cookie redacted, got %s", cookie)
 	}
 
 	headers := server.LastRequestHeaders()

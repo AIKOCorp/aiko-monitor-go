@@ -39,9 +39,17 @@ func main() {
 		SecretKey:  secretKey,
 		Verbose:    true,
 		Actor: aiko.ActorConfig{
-			Provider:   aiko.ActorProviderJWT,
-			IDClaim:    "id",
-			EmailClaim: "email",
+			Provider: aiko.ActorProviderJWT,
+			Token: aiko.ActorTokenConfig{
+				Header: &aiko.ActorHeaderTokenConfig{
+					Name:    "Authorization",
+					Extract: aiko.ActorTokenExtractBearer(),
+				},
+			},
+			Claims: aiko.ActorClaimsConfig{
+				ID:    "sub",
+				Email: "email",
+			},
 		},
 	})
 	if err != nil {
@@ -138,16 +146,94 @@ Example output:
 
 ## Actor extraction
 
-Actor extraction is opt-in. For self-signed JWTs in `Authorization: Bearer ...`, configure the JWT claim paths. The SDK decodes the JWT payload locally and sends only `actor.provider`, `actor.id`, and `actor.email` from the configured claim paths. It does not send the token. The only supported provider in this cut is `aiko.ActorProviderJWT`.
+Actor extraction is opt-in. Configure where the auth token lives and which JWT claims map to actor fields. The SDK decodes JWT payloads locally and sends only `actor.provider`, `actor.id`, `actor.email`, and `actor.org_id`. It does not send the token.
+
+For bearer tokens in the `Authorization` header:
 
 ```go
 monitor, err := aiko.New(aiko.Config{
 	ProjectKey: projectKey,
 	SecretKey:  secretKey,
 	Actor: aiko.ActorConfig{
-		Provider:   aiko.ActorProviderJWT,
-		IDClaim:    "sub",
-		EmailClaim: "email",
+		Provider: aiko.ActorProviderJWT,
+		Token: aiko.ActorTokenConfig{
+			Header: &aiko.ActorHeaderTokenConfig{
+				Name:    "Authorization",
+				Extract: aiko.ActorTokenExtractBearer(),
+			},
+		},
+		Claims: aiko.ActorClaimsConfig{
+			ID:    "sub",
+			Email: "email",
+		},
+	},
+})
+```
+
+For JSON cookies that contain the JWT under a field such as `access_token`:
+
+```go
+monitor, err := aiko.New(aiko.Config{
+	ProjectKey: projectKey,
+	SecretKey:  secretKey,
+	Actor: aiko.ActorConfig{
+		Provider: aiko.ActorProviderJWT,
+		Token: aiko.ActorTokenConfig{
+			Cookie: &aiko.ActorCookieTokenConfig{
+				Name:    "aiko_auth_token",
+				Extract: aiko.ActorTokenExtractJSON("access_token"),
+			},
+		},
+		Claims: aiko.ActorClaimsConfig{
+			ID:    "uid",
+			Email: "sub",
+			OrgID: "org_id",
+		},
+	},
+})
+```
+
+For Supabase auth cookies, configure the cookie name and the claims explicitly. The cookie name is usually `sb-<project-ref>-auth-token`.
+
+```go
+monitor, err := aiko.New(aiko.Config{
+	ProjectKey: projectKey,
+	SecretKey:  secretKey,
+	Actor: aiko.ActorConfig{
+		Provider: aiko.ActorProviderSupabase,
+		Token: aiko.ActorTokenConfig{
+			Cookie: &aiko.ActorCookieTokenConfig{
+				Name: "sb-<project-ref>-auth-token",
+			},
+		},
+		Claims: aiko.ActorClaimsConfig{
+			ID:    "sub",
+			Email: "email",
+		},
+	},
+})
+```
+
+For opaque or encrypted sessions, use a custom resolver and return the actor fields yourself:
+
+```go
+monitor, err := aiko.New(aiko.Config{
+	ProjectKey: projectKey,
+	SecretKey:  secretKey,
+	Actor: aiko.ActorConfig{
+		Provider: aiko.ActorProviderCustom,
+		Resolve: func(ctx aiko.ActorResolveContext) (*aiko.ActorContext, error) {
+			user := userFromRequest(ctx.HTTPRequest)
+			if user == nil {
+				return nil, nil
+			}
+			return &aiko.ActorContext{
+				Provider: aiko.ActorProviderCustom,
+				ID:       user.ID,
+				Email:    user.Email,
+				OrgID:    user.OrgID,
+			}, nil
+		},
 	},
 })
 ```

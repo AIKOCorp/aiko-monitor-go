@@ -83,13 +83,15 @@ func NetHTTPMiddleware(monitor *Monitor) func(http.Handler) http.Handler {
 			}
 
 			requestURI := r.URL.RequestURI()
+			actor := monitor.actorFromHTTPRequest(r)
+			redactActorCarrierHeaders(reqHeaders, monitor.cfg.Actor)
 
 			evt := Event{
 				URL:             requestURI,
 				Endpoint:        requestURI,
 				Method:          strings.ToUpper(r.Method),
 				StatusCode:      statusCode,
-				Actor:           monitor.actorFromHTTPRequest(r),
+				Actor:           actor,
 				RequestHeaders:  reqHeaders,
 				RequestBody:     requestBody,
 				ResponseHeaders: resHeaders,
@@ -165,13 +167,15 @@ func FastHTTPMiddleware(monitor *Monitor, next fasthttp.RequestHandler) fasthttp
 		}
 
 		url := string(ctx.URI().RequestURI())
+		actor := monitor.actorFromFastHTTP(ctx)
+		redactActorCarrierHeaders(reqHeaders, monitor.cfg.Actor)
 
 		evt := Event{
 			URL:             url,
 			Endpoint:        url,
 			Method:          strings.ToUpper(string(ctx.Method())),
 			StatusCode:      status,
-			Actor:           monitor.actorFromFastHTTP(ctx),
+			Actor:           actor,
 			RequestHeaders:  reqHeaders,
 			RequestBody:     requestBody,
 			ResponseHeaders: resHeaders,

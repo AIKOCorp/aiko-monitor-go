@@ -2,13 +2,16 @@ package aiko_test
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -138,9 +141,17 @@ func TestNetHTTPMiddlewareExtractsJWTActor(t *testing.T) {
 		SecretKey:  middlewareSecretKey,
 		Endpoint:   server.Endpoint(),
 		Actor: aiko.ActorConfig{
-			Provider:   aiko.ActorProviderJWT,
-			IDClaim:    "id",
-			EmailClaim: "sub",
+			Provider: aiko.ActorProviderJWT,
+			Token: aiko.ActorTokenConfig{
+				Header: &aiko.ActorHeaderTokenConfig{
+					Name:    "X-Auth-Token",
+					Extract: aiko.ActorTokenExtractBearer(),
+				},
+			},
+			Claims: aiko.ActorClaimsConfig{
+				ID:    "id",
+				Email: "sub",
+			},
 		},
 	})
 	if err != nil {
@@ -158,7 +169,7 @@ func TestNetHTTPMiddlewareExtractsJWTActor(t *testing.T) {
 		"sub": "pixqc1159@gmail.com",
 	})
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/private", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-Auth-Token", "Bearer "+token)
 
 	resp := httptest.NewRecorder()
 	handler.ServeHTTP(resp, req)
@@ -186,6 +197,9 @@ func TestNetHTTPMiddlewareExtractsJWTActor(t *testing.T) {
 	if strings.Contains(string(eventJSON), token) {
 		t.Fatal("expected raw token to be omitted from event payload")
 	}
+	if event.RequestHeaders["x-auth-token"] != "[REDACTED]" {
+		t.Fatalf("expected configured auth header redacted, got %#v", event.RequestHeaders)
+	}
 	for _, field := range []string{"session_id", "org_id", "roles", "source"} {
 		if strings.Contains(string(eventJSON), field) {
 			t.Fatalf("expected deferred actor field %q to be omitted", field)
@@ -205,9 +219,17 @@ func TestNetHTTPMiddlewareOmitsActorWhenConfiguredClaimsDoNotResolve(t *testing.
 		SecretKey:  middlewareSecretKey,
 		Endpoint:   server.Endpoint(),
 		Actor: aiko.ActorConfig{
-			Provider:   aiko.ActorProviderJWT,
-			IDClaim:    "actor.id",
-			EmailClaim: "actor.email",
+			Provider: aiko.ActorProviderJWT,
+			Token: aiko.ActorTokenConfig{
+				Header: &aiko.ActorHeaderTokenConfig{
+					Name:    "Authorization",
+					Extract: aiko.ActorTokenExtractBearer(),
+				},
+			},
+			Claims: aiko.ActorClaimsConfig{
+				ID:    "actor.id",
+				Email: "actor.email",
+			},
 		},
 	})
 	if err != nil {
@@ -231,6 +253,186 @@ func TestNetHTTPMiddlewareOmitsActorWhenConfiguredClaimsDoNotResolve(t *testing.
 	}
 	if event.Actor != nil {
 		t.Fatalf("expected actor to be omitted, got %#v", event.Actor)
+	}
+}
+
+func TestNetHTTPMiddlewareExtractsJWTActorFromJSONCookie(t *testing.T) {
+	server, err := testserver.StartMockServer(middlewareSecretKey, middlewareProjectKey)
+	if err != nil {
+		t.Fatalf("start mock server: %v", err)
+	}
+	defer server.Stop()
+
+	monitor, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Endpoint:   server.Endpoint(),
+		Actor: aiko.ActorConfig{
+			Provider: aiko.ActorProviderJWT,
+			Token: aiko.ActorTokenConfig{
+				Cookie: &aiko.ActorCookieTokenConfig{
+					Name:    "aiko_auth_token",
+					Extract: aiko.ActorTokenExtractJSON("access_token"),
+				},
+			},
+			Claims: aiko.ActorClaimsConfig{
+				ID:    "uid",
+				Email: "sub",
+				OrgID: "org_id",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("init monitor: %v", err)
+	}
+	defer shutdownMonitorHelper(t, monitor)
+
+	handler := aiko.NetHTTPMiddleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	token := testJWT(t, map[string]any{"uid": "usr_alex", "sub": "alex@example.com", "org_id": "org_1"})
+	cookieValue := urlEscapedJSON(t, map[string]any{"access_token": token, "token_type": "bearer"})
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/private", nil)
+	req.Header.Set("Cookie", "aiko_auth_token="+cookieValue)
+
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	event, err := server.WaitForEvent(3 * time.Second)
+	if err != nil {
+		t.Fatalf("wait for event: %v", err)
+	}
+	if event.Actor == nil {
+		t.Fatal("expected actor context")
+	}
+	if event.Actor.Provider != aiko.ActorProviderJWT || event.Actor.ID != "usr_alex" || event.Actor.Email != "alex@example.com" || event.Actor.OrgID != "org_1" {
+		t.Fatalf("unexpected actor: %#v", event.Actor)
+	}
+	if event.RequestHeaders["cookie"] != "[REDACTED]" {
+		t.Fatalf("expected cookie redacted, got %#v", event.RequestHeaders)
+	}
+	eventJSON, err := json.Marshal(event)
+	if err != nil {
+		t.Fatalf("marshal event: %v", err)
+	}
+	if strings.Contains(string(eventJSON), token) {
+		t.Fatal("expected raw token to be omitted from event payload")
+	}
+}
+
+func TestNetHTTPMiddlewareExtractsSupabaseActorFromCookie(t *testing.T) {
+	server, err := testserver.StartMockServer(middlewareSecretKey, middlewareProjectKey)
+	if err != nil {
+		t.Fatalf("start mock server: %v", err)
+	}
+	defer server.Stop()
+
+	monitor, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Endpoint:   server.Endpoint(),
+		Actor: aiko.ActorConfig{
+			Provider: aiko.ActorProviderSupabase,
+			Token: aiko.ActorTokenConfig{
+				Cookie: &aiko.ActorCookieTokenConfig{Name: "sb-project-auth-token"},
+			},
+			Claims: aiko.ActorClaimsConfig{
+				ID:    "sub",
+				Email: "email",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("init monitor: %v", err)
+	}
+	defer shutdownMonitorHelper(t, monitor)
+
+	handler := aiko.NetHTTPMiddleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	token := testJWT(t, map[string]any{"sub": "usr_alex", "email": "alex@example.com"})
+	cookieValue := urlEscapedJSON(t, map[string]any{"access_token": token, "token_type": "bearer"})
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/private", nil)
+	req.Header.Set("Cookie", "sb-project-auth-token="+cookieValue)
+
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	event, err := server.WaitForEvent(3 * time.Second)
+	if err != nil {
+		t.Fatalf("wait for event: %v", err)
+	}
+	if event.Actor == nil {
+		t.Fatal("expected actor context")
+	}
+	if event.Actor.Provider != aiko.ActorProviderSupabase || event.Actor.ID != "usr_alex" || event.Actor.Email != "alex@example.com" {
+		t.Fatalf("unexpected actor: %#v", event.Actor)
+	}
+	if event.RequestHeaders["cookie"] != "[REDACTED]" {
+		t.Fatalf("expected cookie redacted, got %#v", event.RequestHeaders)
+	}
+}
+
+func TestNetHTTPMiddlewareLogsActorDiagnosticsWhenVerbose(t *testing.T) {
+	server, err := testserver.StartMockServer(middlewareSecretKey, middlewareProjectKey)
+	if err != nil {
+		t.Fatalf("start mock server: %v", err)
+	}
+	defer server.Stop()
+
+	var logs bytes.Buffer
+	monitor, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Endpoint:   server.Endpoint(),
+		Verbose:    true,
+		Logger:     log.New(&logs, "", 0),
+		Actor: aiko.ActorConfig{
+			Provider: aiko.ActorProviderJWT,
+			Token: aiko.ActorTokenConfig{
+				Header: &aiko.ActorHeaderTokenConfig{
+					Name:    "Authorization",
+					Extract: aiko.ActorTokenExtractBearer(),
+				},
+			},
+			Claims: aiko.ActorClaimsConfig{ID: "sub", Email: "email"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("init monitor: %v", err)
+	}
+	defer shutdownMonitorHelper(t, monitor)
+
+	handler := aiko.NetHTTPMiddleware(monitor)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	token := testJWT(t, map[string]any{"sub": "usr_alex", "email": "alex@example.com"})
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/private", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp := httptest.NewRecorder()
+	handler.ServeHTTP(resp, req)
+
+	if _, err := server.WaitForEvent(3 * time.Second); err != nil {
+		t.Fatalf("wait for event: %v", err)
+	}
+	output := logs.String()
+	for _, expected := range []string{
+		"actor configured provider=jwt",
+		"carrier=header",
+		"extractor=bearer",
+		"claim_id=sub",
+		"actor resolved provider=jwt id=yes email=yes org_id=no",
+	} {
+		if !strings.Contains(output, expected) {
+			t.Fatalf("expected verbose output to contain %q, got %q", expected, output)
+		}
+	}
+	if strings.Contains(output, token) {
+		t.Fatal("expected raw token to be omitted from verbose logs")
 	}
 }
 
@@ -288,6 +490,15 @@ func testJWT(t *testing.T, claims map[string]any) string {
 	return base64.RawURLEncoding.EncodeToString(header) + "." +
 		base64.RawURLEncoding.EncodeToString(payload) + "." +
 		signature
+}
+
+func urlEscapedJSON(t *testing.T, value map[string]any) string {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal json cookie: %v", err)
+	}
+	return url.QueryEscape(string(raw))
 }
 
 func TestNetHTTPMiddlewareSynthesizesErrorBody(t *testing.T) {
@@ -461,8 +672,8 @@ func TestFastHTTPMiddlewareRecordsRequests(t *testing.T) {
 	if event.RequestHeaders["x-aiko-version"] == "" {
 		t.Fatalf("expected version header, got %#v", event.RequestHeaders)
 	}
-	if cookie := event.ResponseHeaders["set-cookie"]; cookie != "a=1, b=2" {
-		t.Fatalf("expected combined set-cookie header, got %q", cookie)
+	if cookie := event.ResponseHeaders["set-cookie"]; cookie != "[REDACTED]" {
+		t.Fatalf("expected set-cookie redacted, got %q", cookie)
 	}
 	if body, ok := event.RequestBody.(map[string]any); !ok || body["id"].(float64) != 123 {
 		t.Fatalf("expected parsed request body, got %#v", event.RequestBody)
@@ -481,9 +692,17 @@ func TestFastHTTPMiddlewareExtractsJWTActor(t *testing.T) {
 		SecretKey:  fastHTTPSecretKey,
 		Endpoint:   server.Endpoint(),
 		Actor: aiko.ActorConfig{
-			Provider:   aiko.ActorProviderJWT,
-			IDClaim:    "actor.id",
-			EmailClaim: "actor.email",
+			Provider: aiko.ActorProviderJWT,
+			Token: aiko.ActorTokenConfig{
+				Header: &aiko.ActorHeaderTokenConfig{
+					Name:    "Authorization",
+					Extract: aiko.ActorTokenExtractBearer(),
+				},
+			},
+			Claims: aiko.ActorClaimsConfig{
+				ID:    "actor.id",
+				Email: "actor.email",
+			},
 		},
 	})
 	if err != nil {
@@ -700,35 +919,81 @@ func TestNewRejectsInvalidSecretEncoding(t *testing.T) {
 	}
 }
 
-func TestNewRejectsActorClaimPathsWithoutProvider(t *testing.T) {
+func TestNewRejectsActorFieldsWithoutProvider(t *testing.T) {
 	_, err := aiko.New(aiko.Config{
 		ProjectKey: middlewareProjectKey,
 		SecretKey:  middlewareSecretKey,
 		Actor: aiko.ActorConfig{
-			IDClaim: "id",
+			Claims: aiko.ActorClaimsConfig{ID: "id", Email: "email"},
 		},
 	})
 	if err == nil {
 		t.Fatal("expected actor provider config error")
 	}
-	expected := "actor.provider is required when actor claim paths are configured"
+	expected := "actor.provider is required when actor fields are configured"
 	if err.Error() != expected {
 		t.Fatalf("expected %q, got %q", expected, err.Error())
 	}
 }
 
-func TestNewRejectsActorProviderWithoutClaimPath(t *testing.T) {
+func TestNewRejectsActorProviderWithoutToken(t *testing.T) {
 	_, err := aiko.New(aiko.Config{
 		ProjectKey: middlewareProjectKey,
 		SecretKey:  middlewareSecretKey,
 		Actor: aiko.ActorConfig{
 			Provider: aiko.ActorProviderJWT,
+			Claims:   aiko.ActorClaimsConfig{ID: "sub", Email: "email"},
 		},
 	})
 	if err == nil {
-		t.Fatal("expected actor claim config error")
+		t.Fatal("expected actor token config error")
 	}
-	expected := "actor requires at least one of id claim or email claim"
+	expected := "actor.token is required when actor.provider is configured"
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}
+
+func TestNewRejectsJWTActorWithoutExtract(t *testing.T) {
+	_, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Actor: aiko.ActorConfig{
+			Provider: aiko.ActorProviderJWT,
+			Token: aiko.ActorTokenConfig{
+				Header: &aiko.ActorHeaderTokenConfig{Name: "Authorization"},
+			},
+			Claims: aiko.ActorClaimsConfig{ID: "sub", Email: "email"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected actor extract config error")
+	}
+	expected := "actor token extract is required when actor.provider is jwt"
+	if err.Error() != expected {
+		t.Fatalf("expected %q, got %q", expected, err.Error())
+	}
+}
+
+func TestNewRejectsSupabaseActorWithExtract(t *testing.T) {
+	_, err := aiko.New(aiko.Config{
+		ProjectKey: middlewareProjectKey,
+		SecretKey:  middlewareSecretKey,
+		Actor: aiko.ActorConfig{
+			Provider: aiko.ActorProviderSupabase,
+			Token: aiko.ActorTokenConfig{
+				Cookie: &aiko.ActorCookieTokenConfig{
+					Name:    "sb-project-auth-token",
+					Extract: aiko.ActorTokenExtractRaw(),
+				},
+			},
+			Claims: aiko.ActorClaimsConfig{ID: "sub", Email: "email"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected supabase extract config error")
+	}
+	expected := "actor.token.cookie.extract is not allowed when actor.provider is supabase"
 	if err.Error() != expected {
 		t.Fatalf("expected %q, got %q", expected, err.Error())
 	}
@@ -739,15 +1004,20 @@ func TestNewRejectsUnsupportedActorProvider(t *testing.T) {
 		ProjectKey: middlewareProjectKey,
 		SecretKey:  middlewareSecretKey,
 		Actor: aiko.ActorConfig{
-			Provider:   aiko.ActorProvider("clerk"),
-			IDClaim:    "id",
-			EmailClaim: "email",
+			Provider: aiko.ActorProvider("clerk"),
+			Token: aiko.ActorTokenConfig{
+				Header: &aiko.ActorHeaderTokenConfig{
+					Name:    "Authorization",
+					Extract: aiko.ActorTokenExtractBearer(),
+				},
+			},
+			Claims: aiko.ActorClaimsConfig{ID: "id", Email: "email"},
 		},
 	})
 	if err == nil {
 		t.Fatal("expected actor provider config error")
 	}
-	expected := "actor.provider must be jwt"
+	expected := "actor.provider must be jwt, supabase, or custom"
 	if err.Error() != expected {
 		t.Fatalf("expected %q, got %q", expected, err.Error())
 	}

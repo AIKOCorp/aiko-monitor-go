@@ -38,6 +38,8 @@ var sensitiveKeys = map[string]struct{}{
 	"secret":        {},
 	"token":         {},
 	"authorization": {},
+	"cookie":        {},
+	"set-cookie":    {},
 	"api_key":       {},
 }
 
